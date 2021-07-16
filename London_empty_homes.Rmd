@@ -1,0 +1,261 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "07/09/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+I should check spatial auto-corellation for the key variables. They should have spatial elements, but checking and commenting still has value.
+
+
+THe prices should be updated and the change in price calculated over the brexit period and probably the last crash, this will let us see if areas with high numbers of empty property have higher volatility
+
+#Fascinating law change in minneapolis. 
+Minneapolis Saw That NIMBYism Has Victims
+Single-family zoning hurts a lot of people. In Minnesota’s largest city, reformers put them front and center.
+Richard D. Kahlenberg
+Senior fellow at The Century Foundation 
+
+https://www.theatlantic.com/ideas/archive/2019/10/how-minneapolis-defeated-nimbyism/600601/?utm_campaign=the-atlantic&utm_medium=social&utm_term=2019-10-24T10%3A00%3A24&utm_source=facebook&utm_content=edit-promo&fbclid=IwAR30lz6cF4-vXkNDRBvJ_ZWDcoVJp8JjJMOfXc9JnQBYp9jz2Pfp8d0Hudk
+
+non paywall article
+https://www.southwestjournal.com/news/2019/10/triplex-change-slated-for-2040s-first-day/
+
+
+
+```{r}
+
+library(sf)
+
+SubCode <- "~/Dropbox/SSE/Empty Homes/EmptyHomesCode/SubCode"
+setwd(SubCode)
+source("Setup.R")
+
+library(data.table)
+
+setwd(Functions)
+list.files() %>% map(source)
+
+basewd_London <- "/home/jonno/Dropbox/SSE/London_Empty_Homes"
+London_Data <- file.path(basewd_London, "Data")
+Borough_maps <- file.path(basewd_London, "Borough maps")
+Borough_maps_split <- file.path(basewd_London, "Borough maps_split")
+lsoa_shapefile_path <- "~/Dropbox/SSE/Empty Homes/ShapeFiles/Lower_Layer_Super_Output_Areas_December_2011_Generalised_Clipped__Boundaries_in_England_and_Wales"
+
+#create all necessary folders
+c(Borough_maps, Borough_maps_split) %>% walk(~{
+  if(!dir.exists(.x)){dir.create(.x)}
+})
+
+
+list.files("/home/jonno/Dropbox/SSE/London_Empty_Homes/functions", full.names = T) %>%
+  walk(~source(.x))
+
+Figures <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Empty Homes Write up 2/Figures" #file.path(basewd, "Figures")
+TexTables <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Empty Homes Write up 2/Tables"
+suppressMessages(source(file.path(CommonCode, "AuxdataLoad.R")))
+```
+
+```{r}
+print("Region London")
+
+#The original London data set
+source(file.path(CommonCode, "LondonFullProcesss.R"))
+
+#The remaining 3 boroughs
+
+#Havering
+
+ HaveringLONDATA <- read_xlsx("HaveringDiscountsLSOA.xlsx" ) %>%  
+   mutate(LSOA_CODE = WARD_CODE) %>% select(Discount_Class, LSOA_CODE , everything()) %>%
+   {.[1:4]} %>%
+   StructureData(2:3) %>%
+   mutate(MSOALowuseClass = fct_explicit_na(MSOALowuseClass, na_level = "0-10"))
+
+#Tower Hamlets
+ 
+ TowerHamletsLONDATA <- read_xlsx("Tower HamletsDiscountsLSOA - complete v1.xlsx" ) %>%  
+#   mutate(LSOA_CODE = WARD_CODE) %>% select(Discount_Class, LSOA_CODE , everything()) %>%
+   mutate(spare = NA) %>% 
+   StructureData(2:8)
+
+#Harrow
+ HarrowLONDATA <- read_xlsx("3527395 HarrowdiscountsLSOA.xlsx" )[1:4] %>%  
+   StructureData(2:6) 
+ 
+ 
+#
+# Scrub the data to remove Cross overs with other LADs
+#
+
+# Combine Lads into a single df
+#
+#
+
+DATAdf <- ls(pattern = "DATA$") %>%
+  map_df(~{
+    get(.x) %>%
+      select(LSOA11CD, LowUse:LowuseClass) %>%
+      group_by(LAD11CD) %>%
+      mutate(LAD11CDCounts = n()) %>%
+      arrange(-LAD11CDCounts) %>%
+      ungroup %>%
+      mutate(LAD11CD = first(LAD11CD),
+             LAD11NM = first(LAD11NM)) #This allows me to keep tabs on the missing empty homes. this was caused by postcode problems
+  
+      }) %>%
+  select(-LAD11CDCounts) %>%   mutate(LowUsePerc = ifelse(is.na(LowUsePerc), 0 , LowUsePerc),
+    percentile_LowUsePerc = percent_rank(LowUsePerc),
+    percentile_MeanPrice = percent_rank(MeanPrice),
+    LSOAtype = case_when(
+       percentile_MeanPrice >0.5 & percentile_LowUsePerc> 0.5  ~"HVHL",
+        percentile_MeanPrice <0.5 & percentile_LowUsePerc> 0.5  ~"LVHL",
+        percentile_MeanPrice >0.5 & percentile_LowUsePerc< 0.5  ~"HVLL",
+       TRUE ~"LVLL"
+    )) 
+
+rm(list = ls(pattern = "DATA$"))
+
+
+test <- DATAdf %>% ungroup %>%
+  filter(!is.na(LowuseClass)) %>%
+  arrange(-ValLow) %>%
+  mutate(cumsum_val = cumsum(ValLow),
+         cum_perc = cumsum_val/sum(ValLow),
+         cum_count = 1:n()/nrow(.),
+         pareto = cum_perc<0.8) 
+
+setwd(basewd)
+write.csv(DATAdf, "London_data.csv")
+
+```
+
+
+##Deprivation
+
+The deprivation data comes from the ONS and is available from https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019
+
+lower scores are MORE deprived, higher scores are LESS deprived
+
+NOTE: this data includes only England
+
+```{r}
+deprivation_df <- read_excel(file.path(London_Data , "File_1_-_IMD2019_Index_of_Multiple_Deprivation.xlsx"),  
+                             sheet = "IMD2019",
+                   .name_repair = "universal")  %>%
+  set_names(., nm = tolower(names(.))) %>%
+  select(lsoa.code = "lsoa.code..2011.", imd_rank = "index.of.multiple.deprivation..imd..rank")
+
+
+```
+
+
+
+
+
+
+#airbnb data
+
+```{r}
+
+airbnb_df <- process_airnbnb_data(LSOAshapedata, CorePstCd, airbnb_csv = file.path(London_Data, "listings.csv"))
+
+```
+
+
+
+#Bind key variables together
+
+This chunk takes the total homes, the empty homes, the offshore homes, the Airbnb homes and the multiple indices of deprivation and binds them together by LSOA.
+
+```{r}
+
+all_variables <- DATAdf %>% select(LSOA11CD, MSOA11CD, LAD11CD, homes = Homes, low_use = LowUse, mean_price = MeanPrice) %>%
+  filter(complete.cases(.)) %>%
+  left_join(airbnb_df) %>%
+  left_join(deprivation_df %>% rename(LSOA11CD = lsoa.code )) %>%#
+  #replaces NA's caused by zero entries with 0
+mutate_if(is.numeric,coalesce,0)
+
+
+#almost no corellation between emptyness and deprivation
+cor(all_variables$low_use, all_variables$imd_rank, method = "kendall")
+
+cor(all_variables$low_use, all_variables$mean_price, method = "kendall")
+
+```
+
+
+#sample empty non-empty prices
+
+```{r}
+start_time <- Sys.time()
+test <- all_variables %>%
+  mutate(non_target = homes-low_use) %>%
+  monte_carlo_stratified_dataset(.,c("non_target", "low_use"), prices, 5)
+end_time <- Sys.time()
+
+print(end_time-start_time)
+
+
+all_vars_monte <- c("low_use", "airbnb") %>% map(~{
+  all_variables %>%
+    mutate(non_target = homes-.data[[.x]]) %>%
+    monte_carlo_stratified_dataset(.,c("non_target", .x), prices, 501)
+})
+
+
+all_vars_monte_df <- all_vars_monte %>%
+  map_df(~{
+    
+.x[[1]] %>%
+  select(1, 3:5) %>%
+  pivot_longer(., cols = 2:3) %>%
+  filter(name !="non_target")
+    
+  }) %>%
+  bind_rows(all_vars_monte[[1]][[1]] %>%
+  select(1, 3:5) %>%
+  pivot_longer(., cols = 2:3) %>%
+  filter(name =="non_target"))
+
+all_vars_monte_df %>%
+  filter(LAD11CD=="E09000020") %>%
+  ggplot(aes(x = value, colour = name)) + geom_density()
+
+test <-DATAdf %>%
+  select(LAD11CD, LAD11NM) %>%
+  distinct()
+
+
+all_vars_monte[[1]][[1]] %>%
+  pivot_longer(., cols = 2:4)%>%
+  filter(LAD11CD=="E09000020")   %>%
+  ggplot(aes(x = value, colour = name)) + geom_density()
+
+
+
+test <- all_vars_monte[[1]][[1]] %>%
+  filter(LAD11CD=="E09000020") 
+
+
+df <- DATAdf  %>%
+  filter(LAD11CD=="E09000020") %>% 
+        filter(!is.na(Homes))  %>%
+        mutate(occupied = Homes- LowUse) %>%
+        select(LSOA11CD, low_use = LowUse, occupied, LAD11CD) 
+
+test3 <-   monte_carlo_stratified_dataset(df = df, variables = c("occupied", "low_use"), prices, size = 501)
+
+
+test3$samples  %>%
+  pivot_longer(., cols = 2:4)%>%
+  filter(LAD11CD=="E09000020")   %>%
+  ggplot(aes(x = value, colour = name)) + geom_density()
+  
+```
+
+

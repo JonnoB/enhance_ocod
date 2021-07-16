@@ -1,0 +1,487 @@
+---
+title: "Untitled"
+author: "Jonathan Bourne"
+date: "30/06/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+This code is to clean the offshore and airbnb datasets to make them usable for bootstrapping in the style of the empty homes paper
+The data used is London Only
+
+The offshore data Generally has postcode so can be combined with the LSOA postcode matching method to add on the LSOA data.
+The offshore data needs to be subset to LONDON only first, this should also increase postcode density.
+
+The airbnb data does not always have postcode or full postcode, I will use the coordinates and then find out which LSOA the points are inside. This is more challenging but hopefully not to painful.
+
+
+#Load offshore London
+```{r}
+setwd(DataFolder)
+
+offshore_df <- read_excel("OV_FULL_2016_02 (with PEP database for lookup).xlsx", sheet = "OV_FULL_2016_02") %>%
+  filter(Region =="GREATER LONDON")
+
+```
+
+
+
+#load company data
+
+```{r}
+
+setwd(file.path(basewd, "VOA data"))
+
+CompanyData <- read_delim("uk-englandwales-ndr-2017-listentries-compiled-epoch-0002-baseline-csv.csv", delim = "*", col_names = F) %>%
+  mutate(X15 = gsub(" ", "", X15)) %>%
+ #join on postcode and region data
+   left_join(., CorePstCd, by = c("X15" = "Postcode")) %>%
+  #keep only companies in London
+  filter(Region == "E12000007")
+
+#need another regex which looks at number and if followed by apartment etc uses the number as the flat number
+#This regex Identifies the addresses which are flats, this is done primarily searching for the word "flat" etc in the address.
+Flatregex <- "(the.+)?(flat|apartment|penthouse)(s)?(\\s(no)?(\\S+?)(\\s|,)(\\s?(to|-)\\s?.+?(\\s|,))?|,)"
+
+```
+
+
+```{r}
+Roadnames <- unique(CompanyData$X11) %>% 
+  gsub(" north| south| east| west", "",., ignore.case = TRUE) %>% 
+  word(.,-1) %>% data_frame(Endings = .) %>%
+  group_by(Endings) %>%
+  summarise(count = n()) %>%
+  arrange(-count) %>%
+  mutate(cumsum = cumsum(count),
+         cumperc = cumsum/sum(count))
+
+#A list of road names to remove as they cause problems.
+#Typically these problems are caused because the road name matches a property type like "house" or something similar and so can result in false positive ID's
+removeNames <- "park house buildings green end farm estate court bridge hall drove villas" %>% str_split(., " ", simplify = TRUE)
+
+#match the top most occurring endings to the offshore list and get the counts
+TopRoadEndings <- Roadnames$Endings[1:50] %>%  map_dbl(~ sum(grepl(.x, offshore_df$Property_Address, ignore.case = TRUE)))
+
+#arrange in order of occurrence and remove the tricky ones
+Road2 <- Roadnames[1:50,] %>% mutate(occs = TopRoadEndings) %>%
+  arrange(-occs) %>%
+  mutate(Endings = tolower(Endings)) %>%
+  filter(!(Endings %in% removeNames)) %>%
+  mutate(cumsum = cumsum(occs))
+
+Wordswithapotrophes <- paste0("(( \\w+)('s)?)+ (",
+                              paste(c(Road2$Endings, 
+                                      "( \\w+)+(way|gate,)",
+                                      "knightsbridge",
+                                      "holland"
+                                      ),  collapse = "|"),")")
+
+roadmatchregex <- paste0("(([0-9]+([a-z])?))?", Wordswithapotrophes)
+
+```
+
+
+
+```{r}
+
+#This is used in the next code cleaning block it is done here to keep the code easier to read
+StreetNum <- str_extract(tolower(offshore_df$Property_Address), roadmatchregex ) 
+
+{
+offshore_df2 <- offshore_df %>% 
+  mutate(
+    Property_Address =  gsub(" \\(.+?\\)", "", Property_Address), #remove anything in brackets e.g postcodes
+    #Label some classes
+    #This initial labelling identifies the low hanging fruit, that is addresses where the class is identified by the address itself.
+    #e.g. the address says "flat" or "pub"
+    class = case_when( 
+      #Label flats as domestic
+    grepl(Flatregex, Property_Address, ignore.case = T) ~ "domestic",
+    #addresses with certain key words in such as "pub" or "office" are labelled as commercial properties
+    grepl("(hotel)|(office)|(pub)|(business)|(cafe)|(^shop)|( shop)|(restaurant)",Property_Address, ignore.case = T) ~ "commercial",
+    #There are quite a lot of car parks and parking spaces, these are identified here.
+    grepl("^car |^park", Property_Address, ignore.case = T) ~"parking space",
+    #garages are also quire prevelent
+    grepl("garage", Property_Address, ignore.case = T) ~"parking space",
+    #Some peices of land are identified using the descriptor land. It is assumed this land is undeveloped/brownfield
+    grepl("^land", Property_Address, ignore.case = T) ~ "land",
+    #Properties including the word cottege are classified as domestic
+    grepl("^[a-z]+( [a-z])* cottage", Property_Address, ignore.case = T) ~"domestic",
+    #There are a substantial number of properties that are courts/villas/mansions. these are identified as domestic properties.
+    grepl("(^[0-9]+([a-z])?)(( \\w+)('s)?)+ (court|villas|mansions)", Property_Address, ignore.case = T) ~"domestic",
+    TRUE ~ "unknown"
+  )) %>%
+  #Street names are identified here
+  mutate( Street = gsub("([0-9]+([a-z])?)", "", StreetNum),
+          Streetnumber =gsub("([a-z])+", "", StreetNum, ignore.case = T),
+          Street = gsub("'", "", Street),
+          Street = case_when(
+      !is.na(Street) ~ Street, #if not NA keep as is otherwise...
+      TRUE ~ str_extract(tolower(Property_Address), Wordswithapotrophes ) #no street number
+    ),
+    Street = case_when(
+            grepl("^land", Property_Address, ignore.case = T) ~ 
+        str_extract(tolower(Property_Address), paste0("(of|at)", Wordswithapotrophes) ) %>%
+          gsub("of |at ", "",.), #begins with land about 13k
+        TRUE ~ Street
+        
+    ) %>% gsub(" (and|to) ", "", .)
+    ) %>%
+  #sorting houses
+  mutate(
+    HouseName  = str_extract(tolower(Property_Address), "^([a-z]+)( [a-z]+)* (house|court|farm|villa|cottage|lodge)(s)?") %>%
+      ifelse(grepl("^land",.), NA,.)
+ 
+    ) %>%
+#Trim whitspace
+mutate(Street = trimws(Street),
+       Postcode = str_remove_all(Postcode, " ")) %>%
+  #remove all the random proprietor info
+  #The first proprietor maybe should be included but atm they are just dropped
+  select(-contains("Proprietor_"), -contains("Company_Registration_No"))
+  
+  #After the initial classification has taken place a second wave can be performed.
+  #This looks at all properties which are not yet classified and also are in a postcode which does not have any registered businesses
+  
+
+  no_pstcd_match <- offshore_df2 %>% #select(Title_Number, class, Postcode) %>%
+    filter(!is.na(Postcode)) %>%
+    anti_join(., CompanyData %>% rename(Postcode = X15) %>% mutate(Street = tolower(X11)), by = "Postcode") %>%
+    filter(class == "unknown")
+  #All properties that do not have a class and are in a post code with no matching business are defined as domestic in the class2 column  
+  offshore_df2 <- offshore_df2 %>%
+    mutate(class2 = ifelse(Title_Number %in% (no_pstcd_match %>% pull(Title_Number)), "domestic", class))
+  
+}
+
+
+table(offshore_df2$class)
+table(offshore_df2$class2)
+
+write_csv(offshore_df, file.path("/home/jonno/Downloads", "offshore_df.csv"))
+
+#offshore_df <- read_csv(file.path("/home/jonno/Downloads", "offshore_df.csv"))
+
+"(business)|(cafe)|(^shop)|( shop)|(pub)|(restaurant)"
+test <- offshore_df %>%
+  filter(grepl("house",offshore_df$Property_Address, ignore.case = T))
+sum( grepl("(maisonette)",offshore_df$Property_Address, ignore.case = T) )
+
+#The number without postcodes
+table(class = offshore_df2$class, has_pstcd = !is.na(offshore_df2$Postcode))
+
+table(class = offshore_df2$class2, has_pstcd = !is.na(offshore_df2$Postcode))
+
+#All properties have boroughs but not all properties have postcodes
+table(Postcode= is.na(offshore_df2$Postcode), borough = is.na(offshore_df2$District))
+
+#There are very few properties that have neither street nor postcode. This means we can use the borough to narrow down the number of options. 
+#This means we can search the VOA data for businesses registered on those streets and infer that if there is no business on a street of that name in that borough then it must be a domestic property.
+table(Postcode= is.na(offshore_df2$Postcode), 
+      street = is.na(offshore_df2$Street))
+
+
+sum( grepl("(dolphin)",offshore_df2$Property_Address, ignore.case = T) )
+
+  table(test$class, is.na(test$Postcode), useNA = "always")
+
+  test2 <- offshore_df2 %>%
+    filter(class == "commercial")
+  
+  
+  test <- offshore_df2 %>%
+    filter(grepl("(dolphin)", Property_Address, ignore.case = T))
+  
+sum(grepl(  "new london", offshore_df2 $Property_Address, ignore.case = T))
+  
+#all properties that do have a class but are in a post code with a matching business 
+test2 <- offshore_df2 %>% select(Title_Number, Property_Address, class, Postcode,Street) %>%
+  mutate(Postcode2 = str_remove_all(Postcode, " ")) %>%
+  semi_join(., CompanyData %>% rename(Postcode2 = X15) %>% mutate(Street_comp = tolower(X11)) %>% select(Postcode2, Street_comp)) %>%
+  filter(class == "unknown")
+
+
+table(test2$class)
+
+string  <- "...something something word1 & word2 something..."
+pattern <- "(\\S+)\\s*&\\s*(\\S+)"
+match   <- regexec(pattern, string)
+  regmatches(string, match)
+```
+
+
+#bootstrap and process
+
+```{r}
+
+offshore_lsoa <- offshore_df2 %>%
+  select(-Region) %>%
+  left_join(CorePstCd) 
+
+na_offshore_lsoa <- offshore_lsoa %>%
+  filter(is.na(LSOA11CD))
+
+#Very few of the missing LSOA rows come from unmatched postcodes
+table(is.na(na_offshore_lsoa$Postcode))/nrow(na_offshore_lsoa)
+table(na_offshore_lsoa$class2)
+
+offshore_lsoa %>%
+  group_by(class2) %>%
+  summarise(quantity = n()) %>%
+  rename(category = class2) %>%
+  #filter(category !="unknown") %>%
+  mutate(fraction = signif(quantity/sum(quantity), 2)) %>%
+  xtable(., caption = "The total occurances of each offshore category type, after identification using regular expressions",label = "tab:offshore_counts")
+
+
+write_csv(offshore_lsoa, file.path(basewd, "offshore_with_lsoa.csv"))
+
+offshore_lsoa <- read_csv( file.path(basewd, "offshore_with_lsoa.csv"))
+
+offshore_lsoa <- offshore_lsoa %>%
+  filter(class2 =="domestic",
+         !is.na(LSOA11CD)
+         ) %>%
+  group_by(LSOA11CD) %>%
+  summarise(offshore = n())
+
+data_offshore <- DATAdf %>%
+  left_join(offshore_lsoa) %>%
+  mutate(
+    offshore = ifelse(is.na(offshore), 0, offshore),
+    LowUse = offshore,
+         Empty = 0,
+         Homes = offshore+1) %>%
+  filter(grepl("^E", LSOA11CD))
+  
+
+DATAdf <- data_offshore
+
+setwd(file.path(basewd_London, "offshore_bootstrap_msoa"))
+BootstrapAllData(data_offshore, LimitValue = 1.4e5, Reps = 501, GroupingVars = "MSOA11CD")
+
+
+MSOAModelData <-CreateGeogModelData("MSOA", file.path(basewd_London, "offshore_bootstrap_msoa")) 
+
+MSOAMean <- MeanModelData(MSOAModelData, "MSOA") %>%
+  select(MSOA11CD, LowUsePerc)
+
+
+MSOAMean2 <- DATAdf %>%
+  select(LAD11CD, MSOA11CD, LAD11NM) %>%
+  distinct() %>%
+  left_join(MSOAMean) %>%
+  arrange(-LowUsePerc) %>%
+  group_by(LAD11CD) %>%
+  summarise(MSOA11CD = first(MSOA11CD),
+            MSOA_LUP_perc = first(LowUsePerc),
+            LAD11NM = first(LAD11NM))
+
+
+LADModelData_offshore <-CreateGeogModelData("LAD", file.path(basewd_London,  "offshore_bootstrap_msoa")) %>%
+  mutate(LowUseMedian = ifelse(is.na(LowUseMedian),0, LowUseMedian ),
+         LowUseMean = ifelse(is.na(LowUseMean),0, LowUseMean ))
+
+LADMean_offshore <- MeanModelData(LADModelData_offshore , "LAD") %>%
+  select(LAD11CD:LowUse, HomesMean, LowUseMean ) %>%
+  inner_join(DATAdf %>%
+  select(LAD11CD, LAD11NM) %>%
+  distinct()
+) %>%
+  mutate(LowUsePerc = LowUse/(Homes)) %>%
+  rename(Properties = Homes, #properties have confuxingly beeen called homes even though they include both homes and lups, I am clarifying here
+         LUPs = LowUse,
+         Property_mean_value = HomesMean,
+         LUPs_mean_value = LowUseMean,
+         LUPs_perc = LowUsePerc) %>%
+  left_join(MSOAMean2)  %>% 
+  #add in council tax
+  left_join(.,
+            read_xlsx(file.path("/home/jonno/Dropbox/SSE/Empty Homes/Data", 
+                                "QRC4-2017-2018.xlsx"), 
+                      sheet = 2, skip = 2) %>%
+              select(3:4) %>%
+              set_names("LAD11CD", "CouncilTax") %>%
+              mutate(CouncilTax = CouncilTax*1000)
+            ) %>%
+  left_join(DATAdf %>% group_by(LAD11CD) %>%
+              summarise(Pop = sum(Pop, na.rm = TRUE))) %>%
+  select(LAD11NM, everything()) %>%
+  mutate(HVL = LUPs_mean_value>Property_mean_value,
+         Value_diff = (LUPs_mean_value/Property_mean_value),
+         Value_diff_d = case_when(
+           Value_diff <1 ~"<1",
+           Value_diff >=1 & Value_diff <1.05 ~"1-1.05",
+            Value_diff >=1.05 & Value_diff <1.1 ~"1.05-1.1",
+            Value_diff >=1.1 & Value_diff <1.2 ~"1.1-1.2",
+            TRUE ~ ">1.2"
+         ) %>% factor(., levels = c("<1", "1-1.05","1.05-1.1","1.1-1.2",">1.2"))) %>%
+  #shorten the names
+  mutate(Names2 = case_when(
+    LAD11NM =="Hammersmith and Fulham" ~"LBHF",
+    LAD11NM == "Kensington and Chelsea" ~"RBKC",
+    LAD11NM == "City of London" ~"City",
+    LAD11NM == "Barking and Dagenham" ~"Barking",
+      LAD11NM == "Tower Hamlets" ~"TH",
+     LAD11NM == "Richmond upon Thames" ~"Richmond",
+      LAD11NM == "Kingston upon Thames" ~"Kingston",
+     LAD11NM == "Westminster" ~"Wstmnstr",
+    TRUE ~ LAD11NM
+  ),
+  total_Lup_value = LUPs_mean_value*LUPs,
+  empty_tax = total_Lup_value*0.01,
+  Empty_tax_perc = empty_tax/CouncilTax,
+  Empty_tax_perc_d = case_when(
+    Empty_tax_perc <0.1 ~"<10",
+     Empty_tax_perc >= 0.1 & Empty_tax_perc <.2 ~"10-20",
+      Empty_tax_perc >= 0.2 & Empty_tax_perc <.5 ~"20-50",
+          Empty_tax_perc >= 0.5 & Empty_tax_perc <1 ~"50-100",
+    TRUE ~">100"
+  ) %>% factor(., level = c("<10", "10-20", "20-50", "50-100", ">100"))) 
+
+
+
+
+```
+
+
+```{r}
+
+test <- LADMean_offshore %>% 
+  select(LAD11CD, LAD11NM, contains("LUP")) 
+
+
+names(test)[c(3:7)] <- c("offshore_counts", "offshore_mean_value", "offshore_perc", "MSOA_offshore_perc", "total_offshore_value" )
+
+combine_vals <-left_join(LADMean, test) %>%
+  group_by(MSOA11CD) %>%
+  mutate(offshore_perc = offshore_counts/Properties,
+         MSOA_offshore_perc = sum(offshore_counts)/sum(Properties),
+         total_offshore_value =offshore_counts*offshore_mean_value) %>%
+  ungroup %>%
+  select(LAD11CD, LAD11NM, Properties:LUPs, offshore_counts, Property_mean_value, LUPs_mean_value, offshore_mean_value, total_Lup_value, total_offshore_value) %>%
+  mutate(fract_offshore = offshore_counts/sum(offshore_counts),
+         offshore_over_property_value = offshore_mean_value/Property_mean_value,
+         offshore_over_property_value =ifelse(offshore_over_property_value ==0, NA,offshore_over_property_value ),
+         LUP_offshore_over_property_value = LUPs_mean_value/Property_mean_value)
+
+
+#looks like about 40Billion in offshore property
+sum(combine_vals$total_offshore_value)/1e9
+
+write_csv(combine_vals, file.path(basewd_London, "offshore_summary.csv"))
+
+pivot_longer(combine_vals %>% select(1:7), cols = Property_mean_value:offshore_mean_value) %>%
+  ggplot(aes(x = value, colour = name)) + geom_histogram()+
+  facet_wrap(~name)
+
+```
+
+#plot offshore maps
+```{r}
+
+LADshape <- st_read(file.path("/home/jonno/Dropbox/SSE/Empty Homes/ShapeFiles", "Local_Authority_Districts_December_2016_Full_Extent_Boundaries_in_Great_Britain"))  %>%
+  inner_join(., combine_vals , by = c("lad16cd"= "LAD11CD"))
+
+names(combine_vals)
+names(LADMean)
+
+
+LADshape %>%
+ggplot(.) +  
+  geom_sf(aes(fill = fract_offshore*100), size = 0)  +
+  scale_fill_viridis_c() +
+   theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank()) +
+  labs(title = "Percent of offshore property by local authority", 
+       fill = "Percent") 
+
+
+LADshape %>%
+ggplot(.) +  
+  geom_sf(aes(fill = offshore_mean_value/1e6), size = 0)  +
+  scale_fill_viridis_c() +
+   theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank()) +
+  labs(title = "Value of mean offshore property by local authority", 
+       fill = "Million GPB") 
+
+
+LADshape %>%
+ggplot(.) +  
+  geom_sf(aes(fill =  offshore_over_property_value ), size = 0)  +
+  scale_fill_viridis_c() +
+   theme(axis.title.x=element_blank(),
+          axis.text.x=element_blank(),
+          axis.ticks.x=element_blank(),
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks.y=element_blank()) +
+  labs(title = "Offshore property price relative to all property prices", 
+       fill = "Ratio") 
+  ggsave(file.path("/home/jonno/Dropbox/Apps/ShareLaTeX/A demonstration of the LaTeX2e class file for SAGE Publications/Figures" ,"offshore_ratio.pdf"))
+
+```
+
+
+#Airbnb
+
+This uses the slightly smaller listings dataset from "http://insideairbnb.com/get-the-data.html" as all I need is the coordinates and whether the property is an entire home or a room within an home.
+
+```{r}
+#The Datadf has a few overlaps which need to be sorted out. as this is causing doubles to appear
+
+test_dups <- DATAdf %>%
+  filter(
+    !is.na(LSOA11CD),
+    duplicated(LSOA11CD))
+
+library(sf)
+
+LSOAshape <- st_read(LSOAshapedata) %>%
+  #Use the postcode lookup to map LSOA and region to the dataset. Filter by region == LONDON
+  left_join(CorePstCd %>%
+distinct(LSOA11CD, .keep_all = TRUE) %>%
+  select(-Postcode), by = c("lsoa11cd"="LSOA11CD")) %>%
+filter(Region %in% "E12000007") %>%
+  st_transform(., crs = 4326) %>%
+  st_make_valid() #some of the shapes overlap are incomplete this ensures they close properly
+
+st_crs(LSOAshape)
+
+airbnb_df <- read_csv(file.path(London_Data, "listings.csv")) %>%
+  filter(room_type == "Entire home/apt") %>%
+st_as_sf(., coords = c("longitude", "latitude"), crs = st_crs(LSOAshape)) %>%
+  mutate(intersection = as.integer(st_intersects(geometry, LSOAshape)),
+         LSOA11CD = LSOAshape$lsoa11cd[intersection]) %>%
+  #a few fall outside the London LSOA. These are removed
+  filter(!is.na(intersection))
+
+airbnb_lsoa_counts <- airbnb_df %>%
+  group_by(LSOA11CD) %>%
+  summarise(airbnb = n()) %>%
+  as_tibble(.) %>%
+  select(-geometry)
+
+
+ggplot() +
+  geom_sf(data = (LSOAshape)) +
+  geom_point(data = bind_cols(airbnb_df, as_tibble(st_coordinates(airbnb_df$geometry))), aes(x = X, y=Y), alpha = 0.02, colour = "red" )
+
+airbnb_lsoa_counts %>%
+  pull(LSOA11CD)
+
+```
+
