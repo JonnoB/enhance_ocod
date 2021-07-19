@@ -11,7 +11,7 @@
 #'
 #'  @export
 #'
-create_sampled_vector <- function(sample_counts, prices2, samples = 501){
+create_sampled_vector <- function(sample_counts, prices2, samples = 501, geography_name){
   
   sample_vect <- vector(mode = "list", length = nrow(sample_counts))
   
@@ -19,7 +19,7 @@ create_sampled_vector <- function(sample_counts, prices2, samples = 501){
     
     target_unit <- unique(sample_counts$smallest_unit)[q]
     
-    unit_values <- prices2$sales_price[prices2$LSOA11CD==target_unit] 
+    unit_values <- prices2$sales_price[prices2[[geography_name]]==target_unit] 
     
     #Sometimes an LSOA will have no sales in that year. In these thankfully rare cases the entire LAD is used.
     if(length(unit_values)==0){

@@ -26,6 +26,20 @@ https://www.southwestjournal.com/news/2019/10/triplex-change-slated-for-2040s-fi
 
 
 
+
+#NExt MOOOVE
+
+##missing sales data
+I need to create a function that fills in missing geographies with the nearest non-missing data. This could be done using either and ego network or LSOA -> MSOA ->LAD data. ego network is better LAD is easier.
+The first step is to workout how many geographies actually have missing data. if it is 0 at MSOA level then I can just do that
+
+The best idea to solve this is to simply append the filler data to the price df where the geogrphy code is that which needs to be added. This requires minimum complexity during the sampling process, which will keep it fast and simple.
+
+
+##aggregation. 
+
+Aggregating the total values does not seem to be working well, the weights seem all over the place, this needs to be fixed.
+
 ```{r}
 
 library(sf)
@@ -51,7 +65,7 @@ c(Borough_maps, Borough_maps_split) %>% walk(~{
 })
 
 
-list.files("/home/jonno/Dropbox/SSE/London_Empty_Homes/functions", full.names = T) %>%
+list.files("/home/jonno/empty_homes_london/functions", full.names = T) %>%
   walk(~source(.x))
 
 Figures <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Empty Homes Write up 2/Figures" #file.path(basewd, "Figures")
@@ -165,28 +179,66 @@ airbnb_df <- process_airnbnb_data(LSOAshapedata, CorePstCd, airbnb_csv = file.pa
 
 ```
 
-
-
 #Bind key variables together
 
 This chunk takes the total homes, the empty homes, the offshore homes, the Airbnb homes and the multiple indices of deprivation and binds them together by LSOA.
 
 ```{r}
-
-all_variables <- DATAdf %>% select(LSOA11CD, MSOA11CD, LAD11CD, homes = Homes, low_use = LowUse, mean_price = MeanPrice) %>%
+#The data is summarised due to some cross over between local authorities
+#This means the LSOA price averages need to be calculated again
+all_variables <- DATAdf %>% select(LSOA11CD, homes = Homes, low_use = LowUse) %>%
   filter(complete.cases(.)) %>%
+  group_by(LSOA11CD) %>%
+  summarise(across(.fns = sum)) %>%
+  left_join(CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD, Region) %>% distinct()) %>%
   left_join(airbnb_df) %>%
   left_join(deprivation_df %>% rename(LSOA11CD = lsoa.code )) %>%#
   #replaces NA's caused by zero entries with 0
-mutate_if(is.numeric,coalesce,0)
+mutate_if(is.numeric,coalesce,0) %>%
+  #remove any outside London straggelers
+  filter(Region == "E12000007")
+
+
+all_variables_lad <- all_variables %>%
+  group_by(LAD11CD) %>%
+  summarise(homes = sum(homes),
+            low_use = sum(low_use),
+            airbnb = sum(airbnb)) %>%
+  left_join(CorePstCd %>% select(LAD11CD, LAD11NM) %>% distinct())
 
 
 #almost no corellation between emptyness and deprivation
 cor(all_variables$low_use, all_variables$imd_rank, method = "kendall")
 
 cor(all_variables$low_use, all_variables$mean_price, method = "kendall")
+test <- CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD) %>% distinct()
 
 ```
+
+
+
+#Price adaptor
+
+There is something weird with the prices when they are missing from the geographies
+
+```{r}
+
+price_test <- prices %>%
+  filter(LAD11CD=="E09000020") %>%
+  group_by(MSOA11CD) %>%
+  summarise(counts = n())
+
+length(unique(price_test$LSOA11CD))
+
+
+test[!(unique(test$LSOA11CD) %in% unique(price_test$LSOA11CD)),]
+
+length(unique(df$MSOA11CD))
+test <- DATAdf  %>%
+  filter(LAD11CD=="E09000020")
+
+```
+
 
 
 #sample empty non-empty prices
@@ -194,18 +246,22 @@ cor(all_variables$low_use, all_variables$mean_price, method = "kendall")
 ```{r}
 start_time <- Sys.time()
 test <- all_variables %>%
-  mutate(non_target = homes-low_use) %>%
-  monte_carlo_stratified_dataset(.,c("non_target", "low_use"), prices, 5)
+  mutate(non_target = homes-airbnb) %>%
+  monte_carlo_stratified_dataset(df = ., variables  = c("non_target", "airbnb"), prices, size= 100, geography_name = "MSOA11CD")
 end_time <- Sys.time()
 
+
+df <-  all_variables %>%
+  mutate(non_target = homes-airbnb)
 print(end_time-start_time)
 
 
 all_vars_monte <- c("low_use", "airbnb") %>% map(~{
   all_variables %>%
     mutate(non_target = homes-.data[[.x]]) %>%
-    monte_carlo_stratified_dataset(.,c("non_target", .x), prices, 501)
+    monte_carlo_stratified_dataset(.,c("non_target", .x), prices, 501, geography_name = "MSOA11CD")
 })
+
 
 
 all_vars_monte_df <- all_vars_monte %>%
@@ -223,7 +279,8 @@ all_vars_monte_df <- all_vars_monte %>%
   filter(name =="non_target"))
 
 all_vars_monte_df %>%
-  filter(LAD11CD=="E09000020") %>%
+  mutate(LAD2 = as.factor(LAD11CD) %>% as.integer()) %>%
+ # filter(LAD2 ==10) %>%
   ggplot(aes(x = value, colour = name)) + geom_density()
 
 test <-DATAdf %>%
@@ -237,7 +294,6 @@ all_vars_monte[[1]][[1]] %>%
   ggplot(aes(x = value, colour = name)) + geom_density()
 
 
-
 test <- all_vars_monte[[1]][[1]] %>%
   filter(LAD11CD=="E09000020") 
 
@@ -246,16 +302,39 @@ df <- DATAdf  %>%
   filter(LAD11CD=="E09000020") %>% 
         filter(!is.na(Homes))  %>%
         mutate(occupied = Homes- LowUse) %>%
-        select(LSOA11CD, low_use = LowUse, occupied, LAD11CD) 
+        select(MSOA11CD, LSOA11CD, low_use = LowUse, occupied, LAD11CD) 
 
-test3 <-   monte_carlo_stratified_dataset(df = df, variables = c("occupied", "low_use"), prices, size = 501)
+test3 <-   monte_carlo_stratified_dataset(df = df, variables = c("occupied", "low_use"), prices, size = 5, geography_name = "MSOA11CD")
 
+.x <- "E09000020"
+
+test4 <- test3$samples %>%
+  mutate(total2 = (occupied* sum(df$occupied)+ low_use*sum(df$low_use))/(sum(df$occupied)+sum(df$low_use)))
 
 test3$samples  %>%
   pivot_longer(., cols = 2:4)%>%
   filter(LAD11CD=="E09000020")   %>%
   ggplot(aes(x = value, colour = name)) + geom_density()
   
+
+
+#There are significant differences so something is wrong
+#The distributions should pretty much identical
+ all_vars_monte[[1]][[1]] %>%
+  select(1, 3:5) %>%
+  pivot_longer(., cols = 2:3) %>%
+  filter(name =="non_target") %>%
+  mutate(type = "low_use") %>%
+bind_rows(all_vars_monte[[2]][[1]] %>%
+  select(1, 3:5) %>%
+  pivot_longer(., cols = 2:3) %>%
+  filter(name =="non_target") %>%
+    mutate(type = "aribnb")) %>%
+   filter(LAD11CD ==  "E09000020") %>%
+  ggplot(aes(x = value, colour = type)) + geom_density()
+   
+
+
 ```
 
 

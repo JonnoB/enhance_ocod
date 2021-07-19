@@ -7,6 +7,7 @@
 #' @param variables a string vector. The name of the variables that provide the counts of the exclusive groups to be sampled
 #' @param prices the prices for each of the sub geographies to be samples
 #' @param size the total number of samples to do
+#' @param geography_name a chracter string. The name of the variable that contains the geography IDs, typically LSOA11CD
 #' 
 #' @details this is a convenience function 
 #' 
@@ -15,24 +16,25 @@
 #' 
 #' @export
 #' 
-monte_carlo_stratified_dataset <- function(df, variables, prices, size){
+monte_carlo_stratified_dataset <- function(df, variables, prices, size, geography_name = "LSOA11CD"){
   
   out <- unique(df$LAD11CD) %>%
     map(~{
-      
+      #print(.x)
       df <- df %>% 
-        filter(LAD11CD ==.x #, !is.na(Homes)
-               )  %>%
-        #mutate(occupied = Homes- LowUse) %>%
-        #select(LSOA11CD, low_use = LowUse, occupied, LAD11CD) %>%
+        filter(LAD11CD ==.x )  %>%
         pivot_longer(., cols = variables, names_to = "class", values_to = "counts") %>%
-        mutate(class_code = as.factor(class) %>% as.integer)
+        mutate(class_code = as.factor(class) %>% as.integer) %>%
+        #aggregate to make sure that the data has one entry per geography_name and class
+        group_by(.data[[geography_name]], class, class_code) %>%
+        summarise(counts = sum(counts)) %>%
+        ungroup
       
       prices2 <- prices %>% filter(LAD11CD == .x ) %>%
-        select(sales_price = X2, LSOA11CD)
+        select(sales_price = X2, geography_name)
       
       start_time <- Sys.time()
-      sample_df <- aggregated_monte_carlo_dt( df, prices2, number_instances = size) %>%
+      sample_df <- aggregated_monte_carlo_dt( df2 =df, prices2, number_instances = size, geography_name = geography_name) %>%
         mutate(LAD11CD = .x)
       end_time <- Sys.time()
       
