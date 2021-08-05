@@ -7,6 +7,13 @@ editor_options:
   chunk_output_type: console
 ---
 
+To ask Alexei
+Make sure the time period matches the periods we are interested in
+Create compound activity vectors using shorter time periods based on the population of the MSOA.
+Retail essential, retail non-essential
+
+
+
 
 I should check spatial auto-corellation for the key variables. They should have spatial elements, but checking and commenting still has value.
 
@@ -186,18 +193,22 @@ This chunk takes the total homes, the empty homes, the offshore homes, the Airbn
 ```{r}
 #The data is summarised due to some cross over between local authorities
 #This means the LSOA price averages need to be calculated again
-all_variables <- DATAdf %>% select(LSOA11CD, homes = Homes, low_use = LowUse) %>%
-  filter(complete.cases(.)) %>%
-  group_by(LSOA11CD) %>%
-  summarise(across(.fns = sum)) %>%
-  left_join(CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD, Region) %>% distinct()) %>%
+all_variables <- CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD, Region) %>% 
+  distinct() %>%
+  filter(Region == "E12000007") %>%
+  left_join(  DATAdf %>% 
+                select(LSOA11CD, homes = Homes, low_use = LowUse) %>%
+                filter(complete.cases(.)) %>%
+                group_by(LSOA11CD) %>%
+                summarise(across(.fns = sum)) 
+  ) %>%
   left_join(airbnb_df) %>%
   left_join(deprivation_df %>% rename(LSOA11CD = lsoa.code )) %>%#
   #replaces NA's caused by zero entries with 0
 mutate_if(is.numeric,coalesce,0) %>%
-  #remove any outside London straggelers
-  filter(Region == "E12000007")
-
+  #there are a few straggler LSOA with no homes I don't know why but the number is small so I will ignore it
+  #These are removed to not cause issues in the analysis
+  filter(homes != 0)
 
 all_variables_lad <- all_variables %>%
   group_by(LAD11CD) %>%
@@ -244,17 +255,28 @@ test <- DATAdf  %>%
 #sample empty non-empty prices
 
 ```{r}
-start_time <- Sys.time()
-test <- all_variables %>%
-  mutate(non_target = homes-airbnb) %>%
-  monte_carlo_stratified_dataset(df = ., variables  = c("non_target", "airbnb"), prices, size= 100, geography_name = "MSOA11CD")
-end_time <- Sys.time()
+
+how_many_zero <- all_variables %>%
+  mutate(low_use = low_use ==0,
+         airbnb = airbnb==0) %>%
+  group_by(MSOA11CD, LAD11CD) %>%
+  summarise(low_use = sum(low_use),
+            airbnb = sum(airbnb))  %>%
+  group_by(LAD11CD) %>%
+  summarise(low_use = sum(low_use),
+            airbnb = sum(airbnb)) %>%
+  left_join(all_variables_lad %>% select(-airbnb, -low_use))
 
 
-df <-  all_variables %>%
-  mutate(non_target = homes-airbnb)
-print(end_time-start_time)
-
+test_data <- tibble(MSOA11CD = c( "E02000577" ,  "E02000578"# , "E02000579","E02000580", "E02000581"
+                                  ), 
+                    homes = c(10, 5#, 20, 15, 2
+                              ), 
+                    low_use = c(0, 4#, 20, 10, 1
+                                ),
+                    airbnb = c(1, 3#, 6, 4, 1
+                               )) %>%
+  mutate(LAD11CD = "E09000020")
 
 all_vars_monte <- c("low_use", "airbnb") %>% map(~{
   all_variables %>%
@@ -274,67 +296,32 @@ all_vars_monte_df <- all_vars_monte %>%
     
   }) %>%
   bind_rows(all_vars_monte[[1]][[1]] %>%
-  select(1, 3:5) %>%
-  pivot_longer(., cols = 2:3) %>%
-  filter(name =="non_target"))
+  select(1, 2:5) %>%
+  pivot_longer(., cols = 2:4) %>%
+  filter(name =="total"))
 
 all_vars_monte_df %>%
   mutate(LAD2 = as.factor(LAD11CD) %>% as.integer()) %>%
  # filter(LAD2 ==10) %>%
   ggplot(aes(x = value, colour = name)) + geom_density()
 
-test <-DATAdf %>%
-  select(LAD11CD, LAD11NM) %>%
-  distinct()
-
-
-all_vars_monte[[1]][[1]] %>%
-  pivot_longer(., cols = 2:4)%>%
-  filter(LAD11CD=="E09000020")   %>%
-  ggplot(aes(x = value, colour = name)) + geom_density()
-
-
-test <- all_vars_monte[[1]][[1]] %>%
-  filter(LAD11CD=="E09000020") 
-
-
-df <- DATAdf  %>%
-  filter(LAD11CD=="E09000020") %>% 
-        filter(!is.na(Homes))  %>%
-        mutate(occupied = Homes- LowUse) %>%
-        select(MSOA11CD, LSOA11CD, low_use = LowUse, occupied, LAD11CD) 
-
-test3 <-   monte_carlo_stratified_dataset(df = df, variables = c("occupied", "low_use"), prices, size = 5, geography_name = "MSOA11CD")
-
-.x <- "E09000020"
-
-test4 <- test3$samples %>%
-  mutate(total2 = (occupied* sum(df$occupied)+ low_use*sum(df$low_use))/(sum(df$occupied)+sum(df$low_use)))
-
-test3$samples  %>%
-  pivot_longer(., cols = 2:4)%>%
-  filter(LAD11CD=="E09000020")   %>%
-  ggplot(aes(x = value, colour = name)) + geom_density()
-  
-
-
-#There are significant differences so something is wrong
-#The distributions should pretty much identical
- all_vars_monte[[1]][[1]] %>%
-  select(1, 3:5) %>%
-  pivot_longer(., cols = 2:3) %>%
-  filter(name =="non_target") %>%
-  mutate(type = "low_use") %>%
-bind_rows(all_vars_monte[[2]][[1]] %>%
-  select(1, 3:5) %>%
-  pivot_longer(., cols = 2:3) %>%
-  filter(name =="non_target") %>%
-    mutate(type = "aribnb")) %>%
-   filter(LAD11CD ==  "E09000020") %>%
-  ggplot(aes(x = value, colour = type)) + geom_density()
-   
-
 
 ```
 
+
+```{r}
+
+test <- DATAdf %>%
+  group_by(LAD11CD) %>%
+  summarise(mean_homes = mean(Homes, na.rm = T),
+            sd_homes = sd(Homes, na.rm = T),
+            sum_homes = sum(Homes, na.rm = T)) %>%
+  left_join(CorePstCd %>% select(LAD11CD, LAD11NM) %>% distinct())
+
+
+test2 <- DATAdf %>%
+  group_by(LSOA11CD) %>%
+  summarise(mean_homes = mean(Homes, na.rm = T)) 
+
+```
 

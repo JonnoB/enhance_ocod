@@ -16,14 +16,14 @@
 #' 
 #' @export
 #' 
-monte_carlo_stratified_dataset <- function(df, variables, prices, size, geography_name = "LSOA11CD"){
+monte_carlo_stratified_dataset <- function(df, variables, prices, size, geography_name = "MSOA11CD"){
   
   out <- unique(df$LAD11CD) %>%
     map(~{
       #print(.x)
       df <- df %>% 
         filter(LAD11CD ==.x )  %>%
-        pivot_longer(., cols = variables, names_to = "class", values_to = "counts") %>%
+        pivot_longer(., cols = all_of(variables), names_to = "class", values_to = "counts") %>%
         mutate(class_code = as.factor(class) %>% as.integer) %>%
         #aggregate to make sure that the data has one entry per geography_name and class
         group_by(.data[[geography_name]], class, class_code) %>%

@@ -14,30 +14,28 @@
 #'
 aggregated_monte_carlo_dt <- function(df2, prices2, number_instances = 501, geography_name){
   
-  #df2 <- df2 %>%
-  #  mutate(class_code = as.factor(class) %>% as.integer(.))
-  
-  sample_counts <- df2 %>%
+  geography_counts <- df2 %>%
     rename(smallest_unit = geography_name) %>%
     group_by(smallest_unit) %>%
     summarise(total = sum(counts)) 
   
   #geographic units
-  number_units <- nrow(sample_counts)
-  #this produces a vector of the sample ID's where each element represents one instance of one georaphic unit in the dataset
+  number_geographic_units <- nrow(geography_counts)
+  #this produces a vector of the sample ID's where each element represents one instance of one geographic unit in the dataset
   #therefore a dataset of 5  geographic units and 10 instances, there will be the numbers 1:10 a total of 5 times
-  sample_id_vect <- rep(1:number_instances, times = number_units)
+  sample_id_vect <- rep(1:number_instances, times = number_geographic_units)
   
   #create a vector where each element is the number of samples in each unit repeated for the total number of instances
   #that will be generated
   #This means if there are two geographic units one contains 100 samples and one contains 80 samples and there are 3 instances
   #then the vector will be c(100, 100, 100, 80, 80,80)
-  sample_instances_vect <- rep(sample_counts$total, each = number_instances)
+  sample_instances_vect <- rep(geography_counts$total, each = number_instances)
   
   #each unique value in this vector identifies one instance
-  #each instance is as long as the total length of the data.
+  #each instance has as many elements as the total length of the data.
   #This means if there are two geographic units one contains 100 samples and one contains 80 samples and there are 3 instances
-  #there will be a vector of 180 ones, 180 twos and 180 threes. c(1,...1,2,...2, 3,...3)
+  #there will be a  180 ones, 180 twos and 180 threes.The numbers will appear such that there are 100 ones followed by
+  #100 twos, followed by 100 threes, followed by 80 ones, followed by 80 twos followed by 80 threes
   instance_id_vect <- rep(sample_id_vect, times = sample_instances_vect)
   
   #small example of the above
@@ -60,7 +58,7 @@ aggregated_monte_carlo_dt <- function(df2, prices2, number_instances = 501, geog
     }) %>% unlist
   
   print("Creating Monte-Carlo simulations")
-  sampled_vect <- create_sampled_vector(sample_counts, prices2, samples = number_instances, geography_name )
+  sampled_vect <- create_sampled_vector(geography_counts, prices2, samples = number_instances, geography_name )
   
   class_dict <- df2 %>% select(class, class_code) %>% distinct()
   
