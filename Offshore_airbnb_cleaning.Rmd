@@ -159,17 +159,11 @@ mutate(Street = trimws(Street),
 }
 
 
+#The number in each class for both classification types 
 table(offshore_df2$class)
 table(offshore_df2$class2)
 
 write_csv(offshore_df, file.path("/home/jonno/Downloads", "offshore_df.csv"))
-
-#offshore_df <- read_csv(file.path("/home/jonno/Downloads", "offshore_df.csv"))
-
-"(business)|(cafe)|(^shop)|( shop)|(pub)|(restaurant)"
-test <- offshore_df %>%
-  filter(grepl("house",offshore_df$Property_Address, ignore.case = T))
-sum( grepl("(maisonette)",offshore_df$Property_Address, ignore.case = T) )
 
 #The number without postcodes
 table(class = offshore_df2$class, has_pstcd = !is.na(offshore_df2$Postcode))
@@ -179,48 +173,36 @@ table(class = offshore_df2$class2, has_pstcd = !is.na(offshore_df2$Postcode))
 #All properties have boroughs but not all properties have postcodes
 table(Postcode= is.na(offshore_df2$Postcode), borough = is.na(offshore_df2$District))
 
-#There are very few properties that have neither street nor postcode. This means we can use the borough to narrow down the number of options. 
-#This means we can search the VOA data for businesses registered on those streets and infer that if there is no business on a street of that name in that borough then it must be a domestic property.
-table(Postcode= is.na(offshore_df2$Postcode), 
-      street = is.na(offshore_df2$Street))
-
-
-sum( grepl("(dolphin)",offshore_df2$Property_Address, ignore.case = T) )
-
-  table(test$class, is.na(test$Postcode), useNA = "always")
-
-  test2 <- offshore_df2 %>%
-    filter(class == "commercial")
-  
-  
-  test <- offshore_df2 %>%
-    filter(grepl("(dolphin)", Property_Address, ignore.case = T))
-  
-sum(grepl(  "new london", offshore_df2 $Property_Address, ignore.case = T))
-  
 #all properties that do have a class but are in a post code with a matching business 
 test2 <- offshore_df2 %>% select(Title_Number, Property_Address, class, Postcode,Street) %>%
   mutate(Postcode2 = str_remove_all(Postcode, " ")) %>%
   semi_join(., CompanyData %>% rename(Postcode2 = X15) %>% mutate(Street_comp = tolower(X11)) %>% select(Postcode2, Street_comp)) %>%
   filter(class == "unknown")
 
-
-table(test2$class)
-
-string  <- "...something something word1 & word2 something..."
-pattern <- "(\\S+)\\s*&\\s*(\\S+)"
-match   <- regexec(pattern, string)
-  regmatches(string, match)
 ```
 
+# Classifying properties with no postcode and no class
 
-#bootstrap and process
+```{r}
+#There are very few properties that have neither street nor postcode. This means we can use the borough to narrow down the number of options. 
+#This means we can search the VOA data for businesses registered on those streets and infer that if there is no business on a street of that name in that borough then it must be a domestic property.
+table(Postcode= is.na(offshore_df2$Postcode), 
+      street = is.na(offshore_df2$Street))
+
+#This is 
+
+
+```
+
+# match postcodes to lsoa
 
 ```{r}
 
 offshore_lsoa <- offshore_df2 %>%
   select(-Region) %>%
   left_join(CorePstCd) 
+
+write_csv(offshore_lsoa, file.path(basewd, "offshore_with_lsoa.csv"))
 
 na_offshore_lsoa <- offshore_lsoa %>%
   filter(is.na(LSOA11CD))
@@ -229,6 +211,7 @@ na_offshore_lsoa <- offshore_lsoa %>%
 table(is.na(na_offshore_lsoa$Postcode))/nrow(na_offshore_lsoa)
 table(na_offshore_lsoa$class2)
 
+#about 60% of the properties are domestic
 offshore_lsoa %>%
   group_by(class2) %>%
   summarise(quantity = n()) %>%
@@ -237,8 +220,13 @@ offshore_lsoa %>%
   mutate(fraction = signif(quantity/sum(quantity), 2)) %>%
   xtable(., caption = "The total occurances of each offshore category type, after identification using regular expressions",label = "tab:offshore_counts")
 
+```
 
-write_csv(offshore_lsoa, file.path(basewd, "offshore_with_lsoa.csv"))
+
+#bootstrap and process
+
+```{r}
+
 
 offshore_lsoa <- read_csv( file.path(basewd, "offshore_with_lsoa.csv"))
 

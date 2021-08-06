@@ -7,17 +7,6 @@ editor_options:
   chunk_output_type: console
 ---
 
-To ask Alexei
-Make sure the time period matches the periods we are interested in
-Create compound activity vectors using shorter time periods based on the population of the MSOA.
-Retail essential, retail non-essential
-
-
-
-
-I should check spatial auto-corellation for the key variables. They should have spatial elements, but checking and commenting still has value.
-
-
 THe prices should be updated and the change in price calculated over the brexit period and probably the last crash, this will let us see if areas with high numbers of empty property have higher volatility
 
 #Fascinating law change in minneapolis. 
@@ -81,7 +70,11 @@ suppressMessages(source(file.path(CommonCode, "AuxdataLoad.R")))
 ```
 
 ```{r}
-print("Region London")
+if(file.exists(file.path(basewd, "London_data.csv"))){
+  
+  DATAdf <- read_csv(file.path(basewd, "London_data.csv"))
+  
+}  else {print("Region London")
 
 #The original London data set
 source(file.path(CommonCode, "LondonFullProcesss.R"))
@@ -140,6 +133,8 @@ DATAdf <- ls(pattern = "DATA$") %>%
 
 rm(list = ls(pattern = "DATA$"))
 
+write.csv(DATAdf, file.path(basewd, "London_data.csv"))
+}
 
 test <- DATAdf %>% ungroup %>%
   filter(!is.na(LowuseClass)) %>%
@@ -149,8 +144,7 @@ test <- DATAdf %>% ungroup %>%
          cum_count = 1:n()/nrow(.),
          pareto = cum_perc<0.8) 
 
-setwd(basewd)
-write.csv(DATAdf, "London_data.csv")
+
 
 ```
 
@@ -170,7 +164,6 @@ deprivation_df <- read_excel(file.path(London_Data , "File_1_-_IMD2019_Index_of_
   set_names(., nm = tolower(names(.))) %>%
   select(lsoa.code = "lsoa.code..2011.", imd_rank = "index.of.multiple.deprivation..imd..rank")
 
-
 ```
 
 
@@ -185,6 +178,18 @@ deprivation_df <- read_excel(file.path(London_Data , "File_1_-_IMD2019_Index_of_
 airbnb_df <- process_airnbnb_data(LSOAshapedata, CorePstCd, airbnb_csv = file.path(London_Data, "listings.csv"))
 
 ```
+
+```{r}
+offshore_df <- read_csv(file.path(basewd, "offshore_with_lsoa.csv")) %>%
+  select( LSOA11CD, class2) %>%
+  filter(complete.cases(.),
+         class2 == "domestic"
+         ) %>%
+  group_by( LSOA11CD) %>%
+  summarise(offshore = n())
+
+```
+
 
 #Bind key variables together
 
@@ -203,6 +208,7 @@ all_variables <- CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD, Region) %>%
                 summarise(across(.fns = sum)) 
   ) %>%
   left_join(airbnb_df) %>%
+  left_join(offshore_df) %>% 
   left_join(deprivation_df %>% rename(LSOA11CD = lsoa.code )) %>%#
   #replaces NA's caused by zero entries with 0
 mutate_if(is.numeric,coalesce,0) %>%
@@ -214,6 +220,7 @@ all_variables_lad <- all_variables %>%
   group_by(LAD11CD) %>%
   summarise(homes = sum(homes),
             low_use = sum(low_use),
+            offshore = sum(offshore),
             airbnb = sum(airbnb)) %>%
   left_join(CorePstCd %>% select(LAD11CD, LAD11NM) %>% distinct())
 
@@ -258,14 +265,17 @@ test <- DATAdf  %>%
 
 how_many_zero <- all_variables %>%
   mutate(low_use = low_use ==0,
-         airbnb = airbnb==0) %>%
+         airbnb = airbnb==0,
+         offshore = offshore==0) %>%
   group_by(MSOA11CD, LAD11CD) %>%
   summarise(low_use = sum(low_use),
-            airbnb = sum(airbnb))  %>%
+            airbnb = sum(airbnb),
+            offshore = sum(offshore))  %>%
   group_by(LAD11CD) %>%
   summarise(low_use = sum(low_use),
-            airbnb = sum(airbnb)) %>%
-  left_join(all_variables_lad %>% select(-airbnb, -low_use))
+            airbnb = sum(airbnb),
+            offshore = sum(offshore)) %>%
+  left_join(all_variables_lad %>% select(-airbnb, -low_use, -offshore))
 
 
 test_data <- tibble(MSOA11CD = c( "E02000577" ,  "E02000578"# , "E02000579","E02000580", "E02000581"
@@ -278,7 +288,7 @@ test_data <- tibble(MSOA11CD = c( "E02000577" ,  "E02000578"# , "E02000579","E02
                                )) %>%
   mutate(LAD11CD = "E09000020")
 
-all_vars_monte <- c("low_use", "airbnb") %>% map(~{
+all_vars_monte <- c("low_use", "airbnb", "offshore") %>% map(~{
   all_variables %>%
     mutate(non_target = homes-.data[[.x]]) %>%
     monte_carlo_stratified_dataset(.,c("non_target", .x), prices, 501, geography_name = "MSOA11CD")
@@ -301,10 +311,33 @@ all_vars_monte_df <- all_vars_monte %>%
   filter(name =="total"))
 
 all_vars_monte_df %>%
+#  filter(value>1.5e6) %>%
   mutate(LAD2 = as.factor(LAD11CD) %>% as.integer()) %>%
  # filter(LAD2 ==10) %>%
   ggplot(aes(x = value, colour = name)) + geom_density()
 
+all_vars_monte_df %>%
+  ggplot(aes(x = reorder(LAD11CD, value, mean), y = value,
+             colour = name)) + geom_boxplot()
+
+all_vars_monte_df %>%
+  group_by(LAD11CD, name) %>%
+  summarise(mean_value = mean(value)) %>%
+  left_join(DATAdf %>% select(LAD11CD, LAD11NM) %>% distinct()) %>%
+  ggplot(aes(x = reorder(LAD11NM, mean_value), y = mean_value,
+             colour = name, group = name)) + geom_line() +
+  labs(title = "Value of property classes across London", x = "Local authority in ascending order of property value",
+       y = "mean bootstrapped value") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+
+test <-all_vars_monte_df %>%
+  group_by(LAD11CD, name) %>%
+  summarise(mean_value = mean(value)) %>%
+  group_by(LAD11CD) %>%
+  mutate(rank_value = rank(mean_value)) 
+
+table(test$name, test$rank_value)
 
 ```
 
