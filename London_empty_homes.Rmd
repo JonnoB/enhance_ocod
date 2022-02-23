@@ -358,3 +358,18 @@ test2 <- DATAdf %>%
 
 ```
 
+
+#check out UPRN etc
+
+```{r}
+
+zip_folder <- "/home/jonno/Downloads"
+NSUL_path <-  file.path(zip_folder, "NSUL_JAN_2022.zip")
+
+master <- as.character(unzip(NSUL_path, list = TRUE)$Name)
+# load the first file "file1.csv"
+data <- read.csv(unz(NSUL_path, "Data/NSUL_JAN_2022_LN.csv"), header = TRUE,
+                 sep = ",") 
+
+```
+
