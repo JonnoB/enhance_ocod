@@ -1,0 +1,38 @@
+---
+title: "Untitled"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r}
+library(Rpostal)
+```
+
+```{r}
+address_df <- read_csv(file.path("/home/jonno/empty_homes_data", "OCOD_cleaned_expanded.csv")) %>%
+  select(title_number, property_address, within_larger_title) %>%
+  distinct()
+
+```
+
+```{r}
+address_df$property_address[1]
+```
+
+
+```{r}
+
+address_obs <- address_df %>%
+  filter(title_number=="NGL958529") %>%
+  pull(property_address) %>%
+  str_remove("\\(") %>%
+  str_remove("\\)")
+
+postal_parse(address_obs)
+
+postal_parse(paste0(address_obs, ", United Kingdom"))
+```
+

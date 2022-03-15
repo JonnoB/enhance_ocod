@@ -22,7 +22,7 @@ process_airnbnb_data <- function(LSOAshapedata, CorePstCd, airbnb_csv ){
     left_join(CorePstCd %>%
                 distinct(LSOA11CD, .keep_all = TRUE) %>%
                 select(-Postcode), by = c("lsoa11cd"="LSOA11CD")) %>%
-    filter(Region %in% "E12000007") %>%
+   # filter(Region %in% "E12000007") %>%
     st_transform(., crs = 4326) %>%
     st_make_valid() #some of the shapes overlap are incomplete this ensures they close properly
   

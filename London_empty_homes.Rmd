@@ -22,6 +22,9 @@ https://www.southwestjournal.com/news/2019/10/triplex-change-slated-for-2040s-fi
 
 
 
+Sam Comber and Dani Arribas Bell
+Machine learning innovations in address matching: A practical comparison of word2vec and CRFs
+ https://doi.org/10.1111/tgis.12522
 
 #NExt MOOOVE
 
@@ -32,164 +35,115 @@ The first step is to workout how many geographies actually have missing data. if
 The best idea to solve this is to simply append the filler data to the price df where the geogrphy code is that which needs to be added. This requires minimum complexity during the sampling process, which will keep it fast and simple.
 
 
-##aggregation. 
+##Aggregation. 
 
 Aggregating the total values does not seem to be working well, the weights seem all over the place, this needs to be fixed.
 
 ```{r}
+packages <- c("tidyverse", "lubridate","spdep", "sf" ,"readxl", "sp","rgdal", "rgeos","forcats", "stringr", "data.table", "xtable")
 
-library(sf)
+#SubCode <- "~/Dropbox/SSE/Empty Homes/EmptyHomesCode/SubCode"
+#setwd(SubCode)
+#source("Setup.R")
 
-SubCode <- "~/Dropbox/SSE/Empty Homes/EmptyHomesCode/SubCode"
-setwd(SubCode)
-source("Setup.R")
-
-library(data.table)
-
-setwd(Functions)
-list.files() %>% map(source)
-
-basewd_London <- "/home/jonno/Dropbox/SSE/London_Empty_Homes"
-London_Data <- file.path(basewd_London, "Data")
-Borough_maps <- file.path(basewd_London, "Borough maps")
-Borough_maps_split <- file.path(basewd_London, "Borough maps_split")
-lsoa_shapefile_path <- "~/Dropbox/SSE/Empty Homes/ShapeFiles/Lower_Layer_Super_Output_Areas_December_2011_Generalised_Clipped__Boundaries_in_England_and_Wales"
-
-#create all necessary folders
-c(Borough_maps, Borough_maps_split) %>% walk(~{
-  if(!dir.exists(.x)){dir.create(.x)}
-})
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
 
 
-list.files("/home/jonno/empty_homes_london/functions", full.names = T) %>%
+lapply(packages, library, character.only = TRUE)
+
+basewd <- "/home/jonno/empty_homes_data"
+basecd <- "/home/jonno/empty_homes_london"
+
+list.files(file.path(basecd, "functions"), full.names = T) %>%
   walk(~source(.x))
 
-Figures <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Empty Homes Write up 2/Figures" #file.path(basewd, "Figures")
-TexTables <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Empty Homes Write up 2/Tables"
-suppressMessages(source(file.path(CommonCode, "AuxdataLoad.R")))
+Figures <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Offshore London paper/Figures" #file.path(basewd, "Figures")
+TexTables <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Offshore London paper/Tables"
+#suppressMessages(source(file.path(CommonCode, "AuxdataLoad.R")))
 ```
 
+#Postcodes for London
+
+The postcode data also includes upto date deprivation data
+
 ```{r}
-if(file.exists(file.path(basewd, "London_data.csv"))){
-  
-  DATAdf <- read_csv(file.path(basewd, "London_data.csv"))
-  
-}  else {print("Region London")
+#Is this even used
+postcodes_df <- read_csv(unz(file.path(basewd, "ONSPD_NOV_2021_UK.zip"), "Data/ONSPD_NOV_2021_UK.csv"))  %>%
+  filter(rgn =="E12000007") %>%
+    select(Postcode = pcd, LSOA11CD = lsoa11, MSOA11CD = msoa11, LAD11CD = oslaua, imd_rank = imd) %>%
+  mutate(Postcode = gsub(" ", "", Postcode)) %>%
+  #add on the names of the local authorities for ease of understanding
+  left_join(read_csv(unz(file.path(basewd, "ONSPD_NOV_2021_UK.zip"), "Documents/LA_UA names and codes UK as at 04_21.csv")) %>%
+  select(LAD11CD = LAD21CD, LAD11NM = LAD21NM))
 
-#The original London data set
-source(file.path(CommonCode, "LondonFullProcesss.R"))
 
-#The remaining 3 boroughs
 
-#Havering
+```
 
- HaveringLONDATA <- read_xlsx("HaveringDiscountsLSOA.xlsx" ) %>%  
-   mutate(LSOA_CODE = WARD_CODE) %>% select(Discount_Class, LSOA_CODE , everything()) %>%
-   {.[1:4]} %>%
-   StructureData(2:3) %>%
-   mutate(MSOALowuseClass = fct_explicit_na(MSOALowuseClass, na_level = "0-10"))
 
-#Tower Hamlets
- 
- TowerHamletsLONDATA <- read_xlsx("Tower HamletsDiscountsLSOA - complete v1.xlsx" ) %>%  
-#   mutate(LSOA_CODE = WARD_CODE) %>% select(Discount_Class, LSOA_CODE , everything()) %>%
-   mutate(spare = NA) %>% 
-   StructureData(2:8)
+```{r}
 
-#Harrow
- HarrowLONDATA <- read_xlsx("3527395 HarrowdiscountsLSOA.xlsx" )[1:4] %>%  
-   StructureData(2:6) 
- 
- 
-#
-# Scrub the data to remove Cross overs with other LADs
-#
 
-# Combine Lads into a single df
-#
-#
 
-DATAdf <- ls(pattern = "DATA$") %>%
+prices <- list.files(file.path(basewd, "price_paid_files"), full.names = T) %>%
   map_df(~{
-    get(.x) %>%
-      select(LSOA11CD, LowUse:LowuseClass) %>%
-      group_by(LAD11CD) %>%
-      mutate(LAD11CDCounts = n()) %>%
-      arrange(-LAD11CDCounts) %>%
-      ungroup %>%
-      mutate(LAD11CD = first(LAD11CD),
-             LAD11NM = first(LAD11NM)) #This allows me to keep tabs on the missing empty homes. this was caused by postcode problems
+    prices <- read_csv(.x, col_names = FALSE ) %>%
+    filter(X14 =="GREATER LONDON")  
+    
+  }) %>%
+    filter(X5 %in% c("D", "S", "T", "F")) %>% #The property types, filtering here greatly reduces the size of the vector
+    mutate(X4 = gsub(" ", "", X4))  %>%
+    left_join(., postcodes_df,
+              by = c("X4"="Postcode"))
+
   
-      }) %>%
-  select(-LAD11CDCounts) %>%   mutate(LowUsePerc = ifelse(is.na(LowUsePerc), 0 , LowUsePerc),
-    percentile_LowUsePerc = percent_rank(LowUsePerc),
-    percentile_MeanPrice = percent_rank(MeanPrice),
-    LSOAtype = case_when(
-       percentile_MeanPrice >0.5 & percentile_LowUsePerc> 0.5  ~"HVHL",
-        percentile_MeanPrice <0.5 & percentile_LowUsePerc> 0.5  ~"LVHL",
-        percentile_MeanPrice >0.5 & percentile_LowUsePerc< 0.5  ~"HVLL",
-       TRUE ~"LVLL"
-    )) 
-
-rm(list = ls(pattern = "DATA$"))
-
-write.csv(DATAdf, file.path(basewd, "London_data.csv"))
-}
-
-test <- DATAdf %>% ungroup %>%
-  filter(!is.na(LowuseClass)) %>%
-  arrange(-ValLow) %>%
-  mutate(cumsum_val = cumsum(ValLow),
-         cum_perc = cumsum_val/sum(ValLow),
-         cum_count = 1:n()/nrow(.),
-         pareto = cum_perc<0.8) 
-
-
-
+  test <- prices %>%
+    filter(grepl("one hyde", X8, ignore.case = T))
+  
+  
+  test <- prices %>%
+    group_by(MSOA11CD) %>%
+    summarise(counts = n())
 ```
 
 
-##Deprivation
+#Load low use data
 
-The deprivation data comes from the ONS and is available from https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019
+This is the low use data processed in the same way as the 2019 paper.
 
-lower scores are MORE deprived, higher scores are LESS deprived
-
-NOTE: this data includes only England
+I should think about whether I need to add more here or not
 
 ```{r}
-deprivation_df <- read_excel(file.path(London_Data , "File_1_-_IMD2019_Index_of_Multiple_Deprivation.xlsx"),  
-                             sheet = "IMD2019",
-                   .name_repair = "universal")  %>%
-  set_names(., nm = tolower(names(.))) %>%
-  select(lsoa.code = "lsoa.code..2011.", imd_rank = "index.of.multiple.deprivation..imd..rank")
+
+  DATAdf <- read_csv(file.path(basewd, "London_data.csv"))
 
 ```
-
-
-
-
-
 
 #airbnb data
 
 ```{r}
 
-airbnb_df <- process_airnbnb_data(LSOAshapedata, CorePstCd, airbnb_csv = file.path(London_Data, "listings.csv"))
+LSOAshapedata <- file.path("~/Dropbox/SSE/Empty Homes","ShapeFiles",
+                           "Lower_Layer_Super_Output_Areas_December_2011_Generalised_Clipped__Boundaries_in_England_and_Wales")
+
+airbnb_df <- process_airnbnb_data(LSOAshapedata, postcodes_df, airbnb_csv = file.path(basewd, "airbnb_listings.csv"))
 
 ```
+
+#offshore
 
 ```{r}
-offshore_df <- read_csv(file.path(basewd, "offshore_with_lsoa.csv")) %>%
-  select( LSOA11CD, class2) %>%
-  filter(complete.cases(.),
-         class2 == "domestic"
-         ) %>%
-  group_by( LSOA11CD) %>%
-  summarise(offshore = n())
+#This file is the output of the Analysing OCOD ipynb
+offshore_df <- read_csv(file.path(basewd, "ocod_lsoa.csv")) %>%
+  select(-1) %>%
+  rename(offshore = '0') %>%
+  rename(LSOA11CD = lsoa11) %>%
+  filter(class == "domestic") %>%
+  select(LSOA11CD, offshore)
+
 
 ```
-
 
 #Bind key variables together
 
@@ -198,9 +152,8 @@ This chunk takes the total homes, the empty homes, the offshore homes, the Airbn
 ```{r}
 #The data is summarised due to some cross over between local authorities
 #This means the LSOA price averages need to be calculated again
-all_variables <- CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD, Region) %>% 
+all_variables <- postcodes_df %>% select(LSOA11CD, MSOA11CD, LAD11CD, LAD11NM, imd_rank) %>% 
   distinct() %>%
-  filter(Region == "E12000007") %>%
   left_join(  DATAdf %>% 
                 select(LSOA11CD, homes = Homes, low_use = LowUse) %>%
                 filter(complete.cases(.)) %>%
@@ -209,7 +162,6 @@ all_variables <- CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD, Region) %>%
   ) %>%
   left_join(airbnb_df) %>%
   left_join(offshore_df) %>% 
-  left_join(deprivation_df %>% rename(LSOA11CD = lsoa.code )) %>%#
   #replaces NA's caused by zero entries with 0
 mutate_if(is.numeric,coalesce,0) %>%
   #there are a few straggler LSOA with no homes I don't know why but the number is small so I will ignore it
@@ -222,18 +174,13 @@ all_variables_lad <- all_variables %>%
             low_use = sum(low_use),
             offshore = sum(offshore),
             airbnb = sum(airbnb)) %>%
-  left_join(CorePstCd %>% select(LAD11CD, LAD11NM) %>% distinct())
+  left_join(postcodes_df %>% select(LAD11CD, LAD11NM) %>% distinct())
 
 
 #almost no corellation between emptyness and deprivation
 cor(all_variables$low_use, all_variables$imd_rank, method = "kendall")
 
-cor(all_variables$low_use, all_variables$mean_price, method = "kendall")
-test <- CorePstCd %>% select(LSOA11CD, MSOA11CD, LAD11CD) %>% distinct()
-
 ```
-
-
 
 #Price adaptor
 
@@ -257,11 +204,11 @@ test <- DATAdf  %>%
 
 ```
 
-
-
 #sample empty non-empty prices
 
 ```{r}
+
+
 
 how_many_zero <- all_variables %>%
   mutate(low_use = low_use ==0,
@@ -288,13 +235,28 @@ test_data <- tibble(MSOA11CD = c( "E02000577" ,  "E02000578"# , "E02000579","E02
                                )) %>%
   mutate(LAD11CD = "E09000020")
 
+
+
 all_vars_monte <- c("low_use", "airbnb", "offshore") %>% map(~{
-  all_variables %>%
-    mutate(non_target = homes-.data[[.x]]) %>%
-    monte_carlo_stratified_dataset(.,c("non_target", .x), prices, 501, geography_name = "MSOA11CD")
+  
+  file_path <- file.path(basewd, "samples_by_type", paste0(.x, ".csv"))
+  
+  if(file.exists(file_path)){
+    print("already exists loading file")
+    temp <- read_rds(file_path)
+    
+  } else{
+    
+    temp <- all_variables %>%
+      mutate(non_target = homes-.data[[.x]]) %>%
+      monte_carlo_stratified_dataset(.,c("non_target", .x), prices, 501, geography_name = "MSOA11CD")
+    
+    write_rds(temp, file_path)
+  }
+  
+  return(temp)
+  
 })
-
-
 
 all_vars_monte_df <- all_vars_monte %>%
   map_df(~{
@@ -305,20 +267,12 @@ all_vars_monte_df <- all_vars_monte %>%
   filter(name !="non_target")
     
   }) %>%
+  #Total is the value of all property
   bind_rows(all_vars_monte[[1]][[1]] %>%
   select(1, 2:5) %>%
   pivot_longer(., cols = 2:4) %>%
   filter(name =="total"))
 
-all_vars_monte_df %>%
-#  filter(value>1.5e6) %>%
-  mutate(LAD2 = as.factor(LAD11CD) %>% as.integer()) %>%
- # filter(LAD2 ==10) %>%
-  ggplot(aes(x = value, colour = name)) + geom_density()
-
-all_vars_monte_df %>%
-  ggplot(aes(x = reorder(LAD11CD, value, mean), y = value,
-             colour = name)) + geom_boxplot()
 
 all_vars_monte_df %>%
   group_by(LAD11CD, name) %>%
@@ -326,10 +280,10 @@ all_vars_monte_df %>%
   left_join(DATAdf %>% select(LAD11CD, LAD11NM) %>% distinct()) %>%
   ggplot(aes(x = reorder(LAD11NM, mean_value), y = mean_value,
              colour = name, group = name)) + geom_line() +
-  labs(title = "Value of property classes across London", x = "Local authority in ascending order of property value",
+  labs(title = "Mean value of property classes across London", x = "Local authority in ascending order of property value",
        y = "mean bootstrapped value") +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
-
+ggsave(file.path(Figures, "mean_price_per_lad.pdf"))
 
 test <-all_vars_monte_df %>%
   group_by(LAD11CD, name) %>%
@@ -344,17 +298,88 @@ table(test$name, test$rank_value)
 
 ```{r}
 
-test <- DATAdf %>%
-  group_by(LAD11CD) %>%
-  summarise(mean_homes = mean(Homes, na.rm = T),
-            sd_homes = sd(Homes, na.rm = T),
-            sum_homes = sum(Homes, na.rm = T)) %>%
-  left_join(CorePstCd %>% select(LAD11CD, LAD11NM) %>% distinct())
+
+test <- all_vars_monte_df %>%
+  left_join(all_variables_lad %>% ungroup %>%
+  rename(total = homes) %>%
+  pivot_longer(cols = c(low_use, offshore, airbnb, total), values_to = "counts")
+) %>%
+  mutate(total_value = counts *value) 
+
+test_per_sim <- test %>%
+  group_by(id, name) %>%
+  summarise(total_value = sum(total_value),
+            counts = sum(counts)) %>%
+  mutate(mean_value = total_value/counts)
 
 
-test2 <- DATAdf %>%
-  group_by(LSOA11CD) %>%
-  summarise(mean_homes = mean(Homes, na.rm = T)) 
+test_per_sim %>%
+  ggplot(aes(x = name, y =  mean_value, fill = name)) + geom_boxplot() +
+  labs(x = "property type", y = "mean price per property", title = "Comparison of mean property price by type across 501 simulations")
+ggsave(file.path(Figures, "mean_price_london.pdf"))
+
+test_per_sim  %>%
+  filter(name != "total") %>%
+  ggplot(aes(x = name, y =  total_value, fill = name)) + geom_boxplot() +
+  labs(x = "property type", y = "total value by property type", title = "Comparison of total property value by type across 501 simulations")
+ggsave(file.path(Figures, "total_value_london.pdf"))
+
+
+#There are just a lot more low use properties counter balancing the substantially higher value of offshore properties
+#However, it should be remembered that offshore properties overlap with low-use properties.
+test_per_sim %>% ungroup %>%
+  select(name, counts) %>% distinct()
+```
+
+## Entropy
+
+calculating the entropy of the data across the LSOA
+
+```{r}
+entropy_val <- function(vect){
+  
+    probs <- vect/sum(vect)
+#output is in bits or shannons
+    #change to regular log for output in nats.
+    #it really doesn't make any difference
+     temp = -probs * log2(probs)
+  sum(ifelse(is.na(temp), 0, temp))
+}
+
+
+
+c("homes", "low_use", "airbnb", "offshore") %>%
+  map_df(~{
+    
+    tibble(type = .x, bits = entropy_val(all_variables[[.x]]))
+    
+  }) 
+
+
+#Calculating entropy using boostrap sampling shows that
+#The intervall of the entropy is small compared to the difference between
+#the mean entropy values
+entropy_boot <-1:501 %>%
+  map_df(~{
+   set.seed(.x)
+    temp <- all_variables %>% slice_sample(prop = 1, replace = TRUE)
+    
+    c("homes", "low_use", "airbnb", "offshore") %>%
+  map_df(~{
+    
+    tibble(type = .x, bits = entropy_val(temp[[.x]]))
+    
+  }) %>%
+      mutate(id = .x)
+    
+  })
+
+
+entropy_boot %>%
+  ggplot(aes(y = bits, x = type, fill = type)) + geom_boxplot()  +
+  labs(x = "property type", y = "mean entropy in shannons", title = "Comparison of mean entropy by property type across 501 simulations")
+ggsave(file.path(Figures, "entropy_boxplot_london.pdf"))
+
 
 ```
 
@@ -370,6 +395,131 @@ master <- as.character(unzip(NSUL_path, list = TRUE)$Name)
 # load the first file "file1.csv"
 data <- read.csv(unz(NSUL_path, "Data/NSUL_JAN_2022_LN.csv"), header = TRUE,
                  sep = ",") 
+
+```
+
+
+#plot map of London
+```{r}
+{
+  LSOAshape <- st_read(LSOAshapedata) %>%
+  filter(lsoa11cd %in% postcodes_df$LSOA11CD) 
+
+  LSOAshape <- LSOAshape %>%
+    left_join(c("offshore", "low_use") %>%
+                map_df(~{
+                  
+                  tibble(lsoa11cd = LSOAshape$lsoa11cd, name = .x)
+                  
+                }))
+  
+  #Population estimates may be out of date. Newham has more offshore properties than homes.
+  
+  LSOAshape <- all_variables %>% 
+    group_by(LSOA11CD) %>%
+  summarise(across(.cols = homes:offshore, .fns = sum)) %>%
+              # mutate(low_use = (low_use/homes)) %>%
+              #        offshore = (offshore/sum(offshore)) ,
+              #        airbnb = (airbnb/sum(airbnb))) %>%
+  select(lsoa11cd = LSOA11CD, homes:offshore) %>%
+  pivot_longer(., cols = c(homes,low_use, airbnb, offshore)) %>%
+  full_join(LSOAshape, .) %>%
+  group_by(name) 
+  
+  
+  
+}
+
+
+MSOAshapedata <- "~/Dropbox/SSE/Empty Homes/ShapeFiles/Middle_Layer_Super_Output_Areas_December_2011_Super_Generalised_Clipped_Boundaries_in_England_and_Wales"
+{
+  MSOAshape <- st_read(MSOAshapedata) %>%
+  filter(msoa11cd %in% postcodes_df$MSOA11CD) 
+
+  MSOAshape <- MSOAshape %>%
+  left_join(c("homes","offshore", "airbnb", "low_use") %>%
+  map_df(~{
+    
+    tibble(msoa11cd = MSOAshape$msoa11cd, name = .x)
+    
+    
+    
+  }))
+  
+  #Population estimates may be out of date. Newham has more offshore properties than homes.
+MSOAshape <- all_variables %>% 
+  group_by(MSOA11CD) %>%
+  summarise(across(.cols = homes:offshore, .fns = sum)) %>%
+              # mutate(low_use = (low_use/homes)) %>%
+              #        offshore = (offshore/sum(offshore)) ,
+              #        airbnb = (airbnb/sum(airbnb))) %>%
+  select(msoa11cd = MSOA11CD, homes:offshore) %>%
+  pivot_longer(., cols = c(homes,low_use, airbnb, offshore)) %>%
+  full_join(MSOAshape, .) %>%
+  group_by(name) %>%
+  mutate(
+   # perc = value/homes,
+    value2 = log10(value/sum(value)),
+    non_zero = unique(sort(value2,partial=2))[2],
+    value2 = ifelse(!is.finite(value2), non_zero, value2),
+    value3 = (value/sum(value))*log(value),
+    value3 = ifelse(is.finite(value3),value3, 0))
+}
+
+
+
+
+
+
+
+LSOAshape %>%
+  filter(name =="low_use") %>%
+ggplot() +
+   geom_sf(aes(fill = value),  colour = NA, lwd = 0, pch = 0) +
+  facet_wrap(facets = ~name, nrow = 2) +
+  scale_fill_viridis_c() +
+  labs(title = "The distribution of the property types across London log base 10 scale", 
+       fill = "log10(P)")
+ggsave(file.path(Figures, "property_maps.pdf"))
+
+```
+
+#Spatial auto-correlation
+
+```{r}
+
+morans_df <-unique(MSOAshape$name) %>%
+  map_df(~{
+    
+    target_df <- MSOAshape %>% filter(name == .x) 
+    
+    nb <- target_df %>% poly2nb(., queen=TRUE)
+    
+    lw <- nb2listw(nb, style="W", zero.policy=TRUE) 
+    
+    MC<- moran.mc(target_df$value, lw, nsim=10000, alternative="greater")
+    
+    tibble(name = .x, morans_I = MC$statistic, p_value = MC$p.value )
+    
+  })
+
+
+morans_df
+
+#airbnb shows the strongest spatial auto-corellation
+#this is despite the high levels of concetration of offshore property.
+#This difference may be becuase offshore has two main drivers
+#properties owned by single individual
+#property portfolios such as housing estates.
+#The separation of these two types could reveal distinct behaviours and 
+#prices.
+
+```
+
+```{r}
+
+all_vars_monte %>%
+  filter(LAD11CD =="E09000020")
 
 ```
 

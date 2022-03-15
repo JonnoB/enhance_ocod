@@ -1,0 +1,80 @@
+---
+title: "create map"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+
+packages <- c("dplyr", "ggplot2", "rjson", "jsonlite", "leaflet", "RCurl")
+
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+lapply(packages, library, character.only = TRUE)
+```
+
+```{r}
+MSOAshape2 <- MSOAshape %>%
+    filter(name == "offshore") %>%
+    mutate(value  = value) %>%
+    st_transform(., crs =4326) %>%
+    left_join(DATAdf %>% select(msoa11cd = MSOA11CD, homes = MSOAHomes) %>% distinct()) %>%
+    mutate(value = 100*value/homes)
+
+MSOAshape2 <- LSOAshape %>%
+    filter(name == "low_use") %>%
+    mutate(value  = value) %>%
+    st_transform(., crs =4326) %>%
+    left_join(DATAdf %>% select(lsoa11cd = LSOA11CD, homes = Homes) %>% distinct()) %>%
+    mutate(value = 100*value/homes)
+
+
+type = "Low Use"
+
+{
+  m <- MSOAshape2
+  bbox_df <- st_bbox(m)
+  m <- m %>%
+    leaflet(.) %>%
+    addTiles() %>%
+    setView(0, 51.48, zoom = 10) %>%
+  fitBounds(lng1 = bbox_df[[1]], lat1 =  bbox_df[[2]], lng2 =  bbox_df[[3]], lat2 =  bbox_df[[4]])
+  
+}
+
+ bins = c(0, 5, 10, 20, 100)
+pal <- colorBin("YlOrRd", domain = states$density, bins = bins)
+
+
+  labels <- sprintf(
+    paste0("<strong>%s</strong><br/>", type ,"  %g &#37"),
+    MSOAshape2$lsoa11nm, round(MSOAshape2$value,3)
+  ) %>% lapply(htmltools::HTML)
+
+
+  out <-m %>% addPolygons(
+    fillColor = ~pal(value),
+    weight = 2,
+    opacity = 0.5,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) %>%
+    addLegend(pal = pal, values = ~density, opacity = 0.7, title = NULL,
+              position = "bottomright")
+
+```
+
