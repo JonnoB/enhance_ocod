@@ -48,6 +48,10 @@ def remove_overlapping_spans2(list_of_labels_dict):
         
     return list_of_labels_dict
 
+##
+##
+## Expanding the addresses
+##
 
 def expand_multi_id(multi_id_string):
     #the function takes a string that is in the form '\d+(\s)?(-|to)(\s)?\d+'

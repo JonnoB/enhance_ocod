@@ -204,7 +204,7 @@ test <- DATAdf  %>%
 
 ```
 
-#sample empty non-empty prices
+#sample prices monte-carlo
 
 ```{r}
 
@@ -484,14 +484,17 @@ ggsave(file.path(Figures, "property_maps.pdf"))
 
 ```
 
-#Spatial auto-correlation
+#Moran's I
+
+Spatial auto-correlation
 
 ```{r}
 
 morans_df <-unique(MSOAshape$name) %>%
   map_df(~{
     
-    target_df <- MSOAshape %>% filter(name == .x) 
+    target_df <- MSOAshape %>% filter(name == .x) %>%
+      mutate(value = ifelse(is.na(value), 0, value))
     
     nb <- target_df %>% poly2nb(., queen=TRUE)
     
@@ -516,10 +519,211 @@ morans_df
 
 ```
 
+# comparing prices for nested addresses and normal
+
 ```{r}
 
-all_vars_monte %>%
-  filter(LAD11CD =="E09000020")
+offshore_df_nested <- read_csv(file.path(basewd, "ocod_lsoa_by_nested_type.csv")) %>%
+  select(-1) %>%
+  rename(offshore = '0') %>%
+  rename(LSOA11CD = lsoa11) %>%
+  filter(class == "domestic") %>%
+  select(LSOA11CD, offshore, nested = within_larger_title) %>%
+  mutate(nested = ifelse(nested, "nested", "normal")) %>%
+  group_by(LSOA11CD, nested) %>%
+  summarise(offshore = sum(offshore)) %>%
+  pivot_wider(id_cols = LSOA11CD, names_from = nested, values_from = offshore, values_fill = 0) %>%
+  ungroup
+
+
+all_variables_nested <-postcodes_df %>% select(LSOA11CD, MSOA11CD, LAD11CD, LAD11NM, imd_rank) %>% 
+  distinct() %>%
+  left_join(  DATAdf %>% 
+                select(LSOA11CD, homes = Homes, low_use = LowUse) %>%
+                filter(complete.cases(.)) %>%
+                group_by(LSOA11CD) %>%
+                summarise(across(.fns = sum)) 
+  ) %>%
+  left_join(offshore_df_nested) %>% 
+  #replaces NA's caused by zero entries with 0
+mutate_if(is.numeric,coalesce,0) %>%
+  #there are a few straggler LSOA with no homes I don't know why but the number is small so I will ignore it
+  #These are removed to not cause issues in the analysis
+  mutate(homes = normal + nested) %>%
+  filter(homes != 0) 
+
+all_variables_nested_lad <- all_variables_nested %>%
+  group_by(LAD11CD) %>%
+  summarise(homes = sum(homes),
+            nested = sum(nested),
+            normal = sum(normal)) %>%
+  left_join(postcodes_df %>% select(LAD11CD, LAD11NM) %>% distinct())
+
+
+all_vars_monte_nested <- c("nested") %>% map(~{
+  
+  file_path <- file.path(basewd, "samples_by_type", paste0(.x, ".csv"))
+  
+  if(file.exists(file_path)){
+    print("already exists loading file")
+    temp <- read_rds(file_path)
+    
+  } else{
+    
+    temp <- all_variables_nested %>%
+      mutate(non_target = homes-.data[[.x]]) %>%
+      monte_carlo_stratified_dataset(.,c("non_target", .x), prices, 5001, geography_name = "MSOA11CD")
+    
+    write_rds(temp, file_path)
+  }
+  
+  return(temp)
+  
+})
+
+
+all_vars_monte_nested_df <- all_vars_monte_nested %>%
+  map_df(~{
+    
+.x[[1]] %>%
+  select(1, 3:5) %>%
+  pivot_longer(., cols = 2:3) %>%
+  filter(name !="non_target")
+    
+  }) %>%
+  #Total is the value of all property
+  bind_rows(all_vars_monte_nested[[1]][[1]] %>%
+  select(1, 2:5) %>%
+  pivot_longer(., cols = 2:4) %>%
+  filter(name =="non_target")) %>%
+  mutate(name = ifelse(name =="non_target", "normal", name)) %>%
+  left_join(all_variables_nested_lad %>% ungroup %>%
+  rename(total = homes) %>%
+  pivot_longer(cols = c( normal, nested, total), values_to = "counts")
+) %>%
+  mutate(total_value = counts *value) %>%
+  group_by(id, name) %>%
+  summarise(
+    counts = sum(counts),
+     value = sum(value),
+    total_value = sum(total_value)) %>%
+  mutate(mean_value = total_value/counts)
+
+
+#There is not any overlap between the two types they are very different in terms of price
+all_vars_monte_nested_df %>%
+  ggplot(aes(x = mean_value, colour = name)) + geom_density()
+
+```
+
+
+## entropy
+
+```{r}
+
+
+c("nested", "normal") %>%
+  map_df(~{
+    
+    tibble(type = .x, bits = entropy_val(all_variables_nested[[.x]]))
+    
+  }) 
+
+```
+
+## Morans I
+
+```{r}
+{
+  MSOAshape_nested <- st_read(MSOAshapedata) %>%
+  filter(msoa11cd %in% postcodes_df$MSOA11CD) 
+
+  MSOAshape_nested <- MSOAshape_nested %>%
+  left_join(c("normal", "nested") %>%
+  map_df(~{
+    
+    tibble(msoa11cd = MSOAshape_nested$msoa11cd, name = .x)
+    
+    
+    
+  }))
+  
+  #Population estimates may be out of date. Newham has more offshore properties than homes.
+MSOAshape_nested <- all_variables_nested %>% 
+  group_by(MSOA11CD) %>%
+  summarise(across(.cols = homes:normal, .fns = sum)) %>%
+              # mutate(low_use = (low_use/homes)) %>%
+              #        offshore = (offshore/sum(offshore)) ,
+              #        airbnb = (airbnb/sum(airbnb))) %>%
+  select(msoa11cd = MSOA11CD, homes:normal) %>%
+  pivot_longer(., cols = c(homes, nested, normal)) %>%
+  full_join(MSOAshape_nested, .) 
+}
+
+
+
+morans_df_nested <-c("normal", "nested") %>%
+  map_df(~{
+    
+    target_df <- MSOAshape_nested %>% filter(name == .x) %>%
+      mutate(value = ifelse(is.na(value), 0, value)) 
+    
+    nb <- target_df %>% poly2nb(., queen=TRUE)
+    
+    lw <- nb2listw(nb, style="W", zero.policy=TRUE) 
+    
+    MC<- moran.mc(target_df$value, lw, nsim=5001, alternative="greater")
+    
+    tibble(name = .x, morans_I = MC$statistic, p_value = MC$p.value )
+    
+  })
+
+
+morans_df_nested
+
+
+```
+
+##nested conclusion
+
+The nested addresses are substantially cheaper and more concentrated than the normal offshore properties. They also have almost no spatial auto-corellation whilst the normal offshore has high spatial auto corellation. This points to the different natures of the property types. Nested properties represent portfolios within or consisting of a housing development whilst, the onormal offshore property is not and more likely to be owned by an individual.
+
+
+# ocod cleaned expanded tests
+
+```{r}
+
+test <- read_csv(file.path(basewd, "OCOD_cleaned_expanded.csv")) 
+
+test <- test %>%
+  filter(within_title_id==1)
+
+ocod_base = read_csv(file.path(basewd, "OCOD_FULL_2022_02.csv")) 
+
+ocod_ex <- ocod_base %>%
+  filter(`Title Number`=="CB400630")
+
+
+voa_names <- make.names(c("Incrementing Entry Number", "Billing Authority Code", "NDR Community Code", 
+ "BA Reference Number", "Primary And Secondary Description Code", "Primary Description Text",
+"Unique Address Reference Number UARN", "Full Property Identifier", "Firms Name", "Number Or Name",
+"Street", "Town", "Postal District", "County", "Postcode", "Effective Date", "Composite Indicator",
+ "Rateable Value", "Appeal Settlement Code", "Assessment Reference", "List Alteration Date", "SCAT Code And Suffix",
+ "Sub Street level 3", "Sub Street level 2", "Sub Street level 1", "Case Number", 
+ "Current From Date", "Current To Date")) %>% tolower()
+
+
+voa_base <- read_delim(file.path(basewd,  'uk-englandwales-ndr-2017-listentries-compiled-epoch-0029-baseline-csv.csv'), delim = "*",
+                       col_names = voa_names)
+
+
+
+voa <- voa_base %>%
+  filter(tolower(street)  =="holloway road") %>%
+  filter(town =="LONDON") %>%
+  filter(grepl("422", number.or.name))
+
+table(grepl("ADVERTISING", voa_base$primary.description.text))
 
 ```
 
