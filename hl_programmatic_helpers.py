@@ -4,5 +4,5 @@
 ###
 
 #this is a key regex that allows me to identify roads
-road_regex  = r"(\b([a-z'])+\s)+((road|street|lane|way|gate|avenue|close|drive|hill|place|terrace|crescent|gardens|square|walk|grove|mews|row))\b(east|west|north|south)?"
+road_regex  = r"(?<!\S)(?:(?!\b(?:at|on|in|to|of|adjoining)\b)[^\n\d])*? ((road|street|lane|way|gate|avenue|close|drive|hill|place|terrace|crescent|gardens|square|walk|grove|mews|row|quay))\b( east| west| north| south)?"
 
