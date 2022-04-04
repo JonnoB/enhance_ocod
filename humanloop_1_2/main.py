@@ -13,6 +13,8 @@ import pandas as pd
 
 dataset = pd.read_csv('/app/empty_homes_data/property_address_only.csv')
 
+print(dataset.index.dtype)
+
 labels = ['building_name', 'postcode', 'street_name', 'street_number', 'unit_id', 'unit_type', 'city', 'number_filter','last_do_not_use']
 
 #ground_truths = pd.read_csv('/app/empty_homes_data/ground_truth_humanloop.csv')

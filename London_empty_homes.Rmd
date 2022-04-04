@@ -138,8 +138,8 @@ airbnb_df <- process_airnbnb_data(LSOAshapedata, postcodes_df, airbnb_csv = file
 offshore_df <- read_csv(file.path(basewd, "ocod_lsoa.csv")) %>%
   select(-1) %>%
   rename(offshore = '0') %>%
-  rename(LSOA11CD = lsoa11) %>%
-  filter(class == "domestic") %>%
+  rename(LSOA11CD = lsoa11cd) %>%
+  filter(class2 == "domestic") %>%
   select(LSOA11CD, offshore)
 
 
@@ -327,8 +327,9 @@ ggsave(file.path(Figures, "total_value_london.pdf"))
 
 #There are just a lot more low use properties counter balancing the substantially higher value of offshore properties
 #However, it should be remembered that offshore properties overlap with low-use properties.
-test_per_sim %>% ungroup %>%
-  select(name, counts) %>% distinct()
+test_per_sim%>% ungroup %>%
+  group_by(name) %>%
+  summarise(across(.cols = c(-id), .fns = c(mean, median))) 
 ```
 
 ## Entropy
@@ -472,7 +473,7 @@ MSOAshape <- all_variables %>%
 
 
 
-LSOAshape %>%
+MSOAshape %>%
   filter(name =="low_use") %>%
 ggplot() +
    geom_sf(aes(fill = value),  colour = NA, lwd = 0, pch = 0) +
@@ -526,8 +527,8 @@ morans_df
 offshore_df_nested <- read_csv(file.path(basewd, "ocod_lsoa_by_nested_type.csv")) %>%
   select(-1) %>%
   rename(offshore = '0') %>%
-  rename(LSOA11CD = lsoa11) %>%
-  filter(class == "domestic") %>%
+  rename(LSOA11CD = lsoa11cd) %>%
+  filter(class2 == "domestic") %>%
   select(LSOA11CD, offshore, nested = within_larger_title) %>%
   mutate(nested = ifelse(nested, "nested", "normal")) %>%
   group_by(LSOA11CD, nested) %>%
@@ -651,11 +652,11 @@ c("nested", "normal") %>%
   #Population estimates may be out of date. Newham has more offshore properties than homes.
 MSOAshape_nested <- all_variables_nested %>% 
   group_by(MSOA11CD) %>%
-  summarise(across(.cols = homes:normal, .fns = sum)) %>%
+  summarise(across(.cols = c(homes, low_use, normal, nested), .fns = sum)) %>%
               # mutate(low_use = (low_use/homes)) %>%
               #        offshore = (offshore/sum(offshore)) ,
               #        airbnb = (airbnb/sum(airbnb))) %>%
-  select(msoa11cd = MSOA11CD, homes:normal) %>%
+  select(msoa11cd = MSOA11CD, homes, low_use, normal, nested) %>%
   pivot_longer(., cols = c(homes, nested, normal)) %>%
   full_join(MSOAshape_nested, .) 
 }

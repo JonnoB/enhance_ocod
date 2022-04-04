@@ -4,17 +4,22 @@
 ###
 
 #this is a key regex that allows me to identify roads
-road_regex  = r"((road|street|lane|way|gate|avenue|close|drive|hill|place|terrace|crescent|gardens|square|walk|grove|mews|row|view|boulevard))\b(east|west|north|south)?"
+road_regex  = r"((road|street|lane|way|gate|avenue|close|drive|hill|place|terrace|crescent|gardens|square|walk|grove|mews|row|view|boulevard|pleasant|vale|yard|chase|rise|green|passage|friars|viaduct|promenade|end|ridge|embankment|villas|circus))\b( east| west| north| south)?"
 
 multi_word_no_land = r"(?<!\S)(?:(?!\b(?:at|on|in|adjoining|of|and|to)\b)[^\),\n\d])*?\s?"
 waygate_regex = r"(way|gate)(\b(east|west|north|south))?"
 
+welsh_streets = r"(pendre|ryw blodyn|bryn owain|pen y dre|maes yr haf|heol staughton|glantraeth|tai maes|hafod alyn|cae alaw goch|ynys y wern|dol isaf|bro deg|eglwys teg|heol-y-frenhines|downleaze cockett|waun daniel|twyni teg|llwyn onn|delffordd|coed-y-brain|waun Y felin|glan Y lli|ty-draw)"
+
+#This is being treated as a function and causing an error, why?
+special_streets = r"((pall mall|lower mall|haymarket|lower marsh|marsh wall|whyke marsh|london wall|cheapside|eastcheap|piccadilly|aldwych|the strand|strand|bevis marks|old bailey|threelands|pendenza|castelnau|the old meadow|hortonwood|thoroughfare|navigation loop|turnberry|brentwood|hatton garden|greenacres|whitehall|the quadrangle|green lanes|old jewry|st mary axe|minories|foxcover|meadow brook|daisy brook|upper ground|march wall|millharbour|aztec west|trotwood|marlowes|petty france|petty cury|the quadrant|the spinney|robins corner|houndsditch|frogmoor|hanging birches|the birches|arthurstone birches|monks wood|the cedars|the meadows|sandiacre|millbank|moorfields))"
 
 postcode_regex = r"\b[a-z]{1,2}\d[a-z0-9]?\s\d[a-z]{2}\b"
 
+
 city_regex = r"(london|birmingham|manchester|liverpool|leeds|sheffield|brighton|leicester|newcastle|southhampton|portsmouth|cardiff|coventry|swansea|reading|sunderland)"
 
-building_regex = r"\b(house|inn|hotel|office|centre|building|farm|cottage|lodge|home|point)"
+building_regex = r"\b(house|inn|hotel|office|centre|building|farm|cottage|lodge|home|point|arcade(s)?)"
 
 xx_to_yy_regex = r"((\d+)(\s?(to|-)\s?)(\d+)\b)"
 

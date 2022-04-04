@@ -121,15 +121,49 @@ def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1
     end_concat_time = time.time
 
     return out
+
+
+def clean_street_numbers(df, original_column = 'number_or_name'):
+    #This function is primarily designed to clean the street numbers of the voa dataset
+
+    temp = df
+        #remove anything in brackets
+    temp['street_number'] = temp[original_column].str.replace(r"\(.+\)", "", regex = True, case = False)
+    #there are a few + sy,bols used mostly in relation to westfield shopping centeres these are replaced with space
+    temp['street_number'] = temp['street_number'].str.replace("+", r" ", regex = True, case = False)
     
+    #     #units often slip in as street numbers, this kills them off
+    temp.loc[temp['street_number'].str.contains(r"unit|suite|room", regex = True, case = False)==True, 'street_number'] = np.nan
     
+    #     #replace @ and & with words
+    temp['street_number'] = temp['street_number'].str.replace(r"@", " at ", regex = True, case = False).str.replace(r"&", " and ", regex = True, case = False)
+    
+    #     #replace "-" with spaces with a simple "-"
+    temp['street_number'] = temp['street_number'].str.replace(r"(\s)?-(\s)?", "-", regex = True, case = False)
+    
+    #     #take only things after the last space includes cases where there is no space. Then remove all letters
+    temp['street_number'] = temp['street_number'].str.extract(r"([^\s]+$)")[0].str.replace(r"([a-z]+)", "", regex = True, case = False)
+    #     #remove dangling hyphens and slashes
+    temp['street_number'] = temp['street_number'].str.replace(r"(-$)|(^-)|\\|\/", "", regex = True, case = False)
+    temp['street_number'] = temp['street_number'].str.replace(r"\\|\/", " ", regex = True, case = False)
+    #     #replace double hyphen... yes it happens
+    temp['street_number'] = temp['street_number'].str.replace(r"--", r"-", regex = True, case = False)
+
+    #
+    temp.loc[temp['street_number'].str.len() == 0, 'street_number'] = np.nan
+    #some names are simply a string of hyphentated words, this would leave a single - which would cause a crash, this removes those
+    temp.loc[temp['street_number']=="-", 'street_number'] = np.nan
+    
+    return(temp)
     
 ##street matching
 
 def create_lad_streetname2(df, target_lad, street_column_name):
     #
     # used to generalise the cleaning in the street matching process
-    #
+    # Creates a column called streetname 2 for a single lad.
+    #this function has been largely replaced as voa and ocod datasets have street name 2
+    # created on loading.
     #filters to a single LAD
     temp = df.loc[(df['lad11cd']==target_lad)].copy(deep = True)
     
@@ -147,55 +181,34 @@ def create_lad_streetname2(df, target_lad, street_column_name):
 def massaged_address_match(ocod_data, voa_data, target_lad):
 
 	#Matches addresses betweeen the voa and ocod dataet
-##
-## This exact match works pretty much as well as the fuzzy matcher but is much faster and clearer
-##
-#     #filters to a single LAD
-#     #removes advertising hoardings which are irrelevant
-#     LAD_biz = voa_data.loc[(voa_data['lad11cd']==target_lad)].copy(deep = True)
-    
-#     LAD_biz.loc[:,'street_name2'] = LAD_biz['street'].copy(deep=True)
-#     #clean street names of common matching errors
-#     #remove apostraphe's
-#     #remove trailing 's'
-#     #remove all spaces
-#     LAD_biz.loc[:,'street_name2'] = LAD_biz.loc[:,'street_name2'].str.replace(r"'", "", regex = True).\
-#     str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
-    
-#     #subset to target LAD
-#     ocod_data_road = ocod_data[ocod_data['lad11cd']==target_lad].copy(deep = True)
-#     #replace nan values to prevent crash    
-    
-#     #create second column
-#     ocod_data_road['street_name2'] = ocod_data_road['street_name'].copy(deep=True)
-    
-#     #clean street names of common matching errors
-#     #remove apostraphe's
-#     #remove trailing 's'
-#     #remove all spaces
-#     ocod_data_road['street_name2'] = ocod_data_road['street_name2'].str.replace(r"'", "", regex = True).\
-#     str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
 
-    ocod_data_road = create_lad_streetname2(ocod_data, target_lad, 'street_name')
+
+    ocod_data_road = ocod_data.loc[(ocod_data['lad11cd']==target_lad)].copy(deep = True)
     
-    LAD_biz = create_lad_streetname2(voa_data, target_lad, 'street')
+    LAD_biz = voa_data.loc[(voa_data['lad11cd']==target_lad)].copy(deep = True)
     
     #replace nan values to prevent crash    
     ocod_data_road.loc[ocod_data_road.street_name.isna(),'street_name2'] ="xxxstreet name missingxxx"
     
+    #the roads which match
     ocod_data_road['street_match'] = ocod_data_road['street_name2'].isin(LAD_biz.street_name2.unique())
     
     #remove irrelevant streets
-    #print(type(street_name2).sort_values())
-    #print(np.sort(LAD_biz['street_name2'].unique()))
     LAD_biz = LAD_biz[LAD_biz['street_name2'].isin(ocod_data_road['street_name2'].unique()) & LAD_biz['street_name2'].notna() ]
     #create the database table
-    all_street_addresses = create_all_street_addresses(LAD_biz, target_lad)
+    all_street_addresses = create_all_street_addresses(LAD_biz, target_lad).drop_duplicates(subset = ['street_name2', 'street_number']).rename(columns = {'street_number':'street_number2'})
     
+    #prevents matching errors caused by some arcance and horrible thing
+    all_street_addresses['street_number2'] = all_street_addresses['street_number2'].astype('str')
+    all_street_addresses['street_number2'] = all_street_addresses['street_number2'].str.strip()
+
+    ocod_data_road['street_number2'] = ocod_data_road['street_number2'].astype('str')
+    ocod_data_road['street_number2'] = ocod_data_road['street_number2'].str.strip()
+
     #pre-make the new column and assign nan to all values. THis might make things a bit faster
     ocod_data_road['address_match'] = np.nan
     
-    ocod_data_road = ocod_data_road.merge(all_street_addresses, on = ['street_name2', 'street_number'])
+    ocod_data_road = ocod_data_road.merge(all_street_addresses, how = "left", on = ['street_name2', 'street_number2'])
     
     ocod_data_road['address_match'] = ocod_data_road['business_address'].notna()==True
     
@@ -228,26 +241,31 @@ def create_all_street_addresses(voa_businesses, target_lad, return_columns = ['s
     #target_lad is the ons code identifying which local authority will be used. 
     
     temp = voa_businesses[voa_businesses['lad11cd'] == target_lad].copy(deep = True)
+
+    ##
+    ## The below commented block has been replaces as street numbers are now created at dataloading
+    ##
+
     
-    #remove anything in brackets
-    temp['street_number'] = temp['street_number'].str.replace(r"\(.+\)", "", regex = True, case = False)
+    # #remove anything in brackets
+    # temp['street_number'] = temp['street_number'].str.replace(r"\(.+\)", "", regex = True, case = False)
     
-    #units often slip in as street numbers, this kills them off
-    temp.loc[temp['street_number'].str.contains(r"unit|suite", regex = True, case = False)==True, 'street_number'] = np.nan
+    # #units often slip in as street numbers, this kills them off
+    # temp.loc[temp['street_number'].str.contains(r"unit|suite", regex = True, case = False)==True, 'street_number'] = np.nan
     
-    #replace @ and & with words
-    temp['street_number'] = temp['street_number'].str.replace(r"@", " at ", regex = True, case = False).str.replace(r"&", " and ", regex = True, case = False)
+    # #replace @ and & with words
+    # temp['street_number'] = temp['street_number'].str.replace(r"@", " at ", regex = True, case = False).str.replace(r"&", " and ", regex = True, case = False)
     
-    #replace "-" with spaces with a simple "-"
-    temp['street_number'] = temp['street_number'].str.replace(r"(\s)?-(\s)?", "-", regex = True, case = False)
+    # #replace "-" with spaces with a simple "-"
+    # temp['street_number'] = temp['street_number'].str.replace(r"(\s)?-(\s)?", "-", regex = True, case = False)
     
-    #take only things after the last space includes cases where there is no space. Then remove all letters
-    temp['street_number'] = temp['street_number'].str.extract(r"([^\s]+$)")[0].str.replace(r"([a-z]+)", "", regex = True, case = False)
-    #remove dangling hyphens and slashes
-    temp['street_number'] = temp['street_number'].str.replace(r"(-$)|(^-)|\\|\/", "", regex = True, case = False)
-    #replace double hyphen... yes it happens
-    temp['street_number'] = temp['street_number'].str.replace(r"--", r"-", regex = True, case = False)
-    temp.loc[temp['street_number'].str.len() == 0, 'street_number'] = np.nan
+    # #take only things after the last space includes cases where there is no space. Then remove all letters
+    # temp['street_number'] = temp['street_number'].str.extract(r"([^\s]+$)")[0].str.replace(r"([a-z]+)", "", regex = True, case = False)
+    # #remove dangling hyphens and slashes
+    # temp['street_number'] = temp['street_number'].str.replace(r"(-$)|(^-)|\\|\/", "", regex = True, case = False)
+    # #replace double hyphen... yes it happens
+    # temp['street_number'] = temp['street_number'].str.replace(r"--", r"-", regex = True, case = False)
+    # temp.loc[temp['street_number'].str.len() == 0, 'street_number'] = np.nan
     temp.loc[temp['street_number'].str.contains(r"\.", regex = True)==True, 'street_number'] = np.nan
 
     temp['is_multi'] = temp['street_number'].str.contains(r"-", regex = True)
@@ -359,7 +377,7 @@ def massaged_street_match(ocod_data, voa_data, target_lad):
 ##
     #filters to a single LAD
     #removes advertising hoardings which are irrelevant
-    LAD_biz = voa_businesses.loc[(voa_data['lad11cd']==target_lad)].copy(deep = True)
+    LAD_biz = voa_data.loc[(voa_data['lad11cd']==target_lad)].copy(deep = True)
     
     LAD_biz.loc[:,'street_name2'] = LAD_biz['street'].copy(deep=True)
     #remove apostraphe's
