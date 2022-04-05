@@ -7,6 +7,8 @@ editor_options:
   chunk_output_type: console
 ---
 
+jonno
+
 THe prices should be updated and the change in price calculated over the brexit period and probably the last crash, this will let us see if areas with high numbers of empty property have higher volatility
 
 #Fascinating law change in minneapolis. 
