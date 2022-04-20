@@ -8,6 +8,49 @@ import numpy as np
 ##
 ## Removing overlaps section
 ##
+def is_overlap_function_tuples(a,b):
+    ##This version uses tuples and is adapted to create a spacy format
+
+    #identifies any overlapping tags.
+    #takes two dictionaries and outputs a logical value identifying if the tags overlap
+     start_overlap = (b[0] >= a[0]) & (b[0] <= a[1]) 
+     end_overlap = (b[1] >= a[0]) & (b[1] <= a[1]) 
+     return (start_overlap | end_overlap)
+
+    
+def remove_overlapping_spans_tuples(list_of_labels_dict):
+    ##This version uses tuples and is adapted to create a spacy format
+
+    #This function iterates through the list pairwise checking to see if there are overlaps
+    #this function builds on the previous version which checked for overlaps in one go
+    #but didn't consider that a single entity might overlap several subsequent entities
+    #example A (start = 0, end = 20), B (start = 3, end = 10), C (start = 12, end = 20)
+    #A overlaps B and C even though B and C do not overlap, as a result only A should remain
+    
+    i = 0
+    j = i+1
+    while j < len(list_of_labels_dict):
+        
+        
+        #check if there is overlap
+        pair_overlaps = is_overlap_function_tuples(list_of_labels_dict[i],list_of_labels_dict[j])
+        if pair_overlaps:
+            #get index of smallest span
+            span_a = list_of_labels_dict[i][1] - list_of_labels_dict[i][0]
+            span_b = list_of_labels_dict[j][1] - list_of_labels_dict[j][0]
+
+            if span_a > span_b:
+                list_of_labels_dict.pop(j)
+            else:
+                list_of_labels_dict.pop(i)
+        else:
+            #i and j are only updated here as if either is removed the indexing changed such that the original i and j values now represent differnt elements
+            #only when there is no overlap should the indexes advance
+            i = i +1
+            j = i +1
+        
+    return list_of_labels_dict
+
 
 def is_overlap_function(a,b):
     #identifies any overlapping tags.

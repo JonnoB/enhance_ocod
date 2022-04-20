@@ -29,13 +29,8 @@ Machine learning innovations in address matching: A practical comparison of word
  https://doi.org/10.1111/tgis.12522
 
 #NExt MOOOVE
-
-##missing sales data
-I need to create a function that fills in missing geographies with the nearest non-missing data. This could be done using either and ego network or LSOA -> MSOA ->LAD data. ego network is better LAD is easier.
-The first step is to workout how many geographies actually have missing data. if it is 0 at MSOA level then I can just do that
-
-The best idea to solve this is to simply append the filler data to the price df where the geogrphy code is that which needs to be added. This requires minimum complexity during the sampling process, which will keep it fast and simple.
-
+## add in bonnie Scotland, which is vastly easier than doing England and wales becuase they are well organised
+https://statistics.gov.scot/resource?uri=http%3A%2F%2Fstatistics.gov.scot%2Fdata%2Fhousehold-estimates
 
 ##Aggregation. 
 

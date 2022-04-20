@@ -78,3 +78,82 @@ pal <- colorBin("YlOrRd", domain = states$density, bins = bins)
 
 ```
 
+# Whole UK
+
+This is to make a map of the whole uk showing where I have data
+
+```{r}
+
+scotland_data <-read_csv(file.path("/home/jonno/empty_homes_data", "household-estimates.csv"), name_repair = 'universal') %>%
+  rename(Homes = Total.Dwellings,
+         LAD11CD = geography,
+         LAD11NM = Reference.Area) %>%
+  mutate(LowUse = Which.Are.Long.term.empty + Which.Are.Second.Homes + Which.Are.Vacant,
+        LAD11CD = str_remove(LAD11CD, ".*/") )
+
+LADshapedata <-
+  "~/Dropbox/SSE/Empty Homes/ShapeFiles/Local_Authority_Districts_December_2014_Ultra_Generalised_Clipped_Boundaries_in_Great_Britain"
+
+LADshape <- st_read(LADshapedata) %>%
+  left_join(bind_rows(LAD_summary %>% select(LAD11CD, LAD11NM, Homes, LowUse), scotland_data), by = c('lad14cd' = 'LAD11CD')) %>%
+  mutate(data_present = ifelse(!is.na(LowUse)|(grepl("S",lad14cd)), TRUE, FALSE))  %>%
+    st_transform(., crs =4326)
+
+{
+  m <- LADshape
+  bbox_df <- st_bbox(m)
+  m <- m %>%
+    leaflet(.) %>%
+    addTiles() %>%
+    setView(0, 51.48, zoom = 10) %>%
+    fitBounds(
+      lng1 = bbox_df[[1]],
+      lat1 =  bbox_df[[2]],
+      lng2 =  bbox_df[[3]],
+      lat2 =  bbox_df[[4]]
+    )
+  
+  }
+
+
+pal <- colorFactor("YlOrRd", domain = c(TRUE, FALSE))
+
+type = "Low Use"
+
+labels <- sprintf(
+  paste0("<strong>%s</strong><br/>", type , "  %g "),
+  LADshape$lad14nm,
+  LADshape$LowUse
+) %>% lapply(htmltools::HTML)
+
+out <- m %>% addPolygons(
+  fillColor = ~ pal(data_present),
+  weight = 2,
+  opacity = 0.5,
+  color = "white",
+  dashArray = "3",
+  fillOpacity = 0.7,
+  highlight = highlightOptions(
+    weight = 5,
+    color = "#666",
+    dashArray = "",
+    fillOpacity = 0.7,
+    bringToFront = TRUE
+  ),
+  label = labels,
+  labelOptions = labelOptions(
+    style = list("font-weight" = "normal", padding = "3px 8px"),
+    textsize = "15px",
+    direction = "auto"
+  )
+)%>%
+  addLegend(
+    pal = pal,
+    values = ~ c(TRUE, FALSE),
+    opacity = 0.7,
+    title = NULL,
+    position = "bottomright"
+  )
+  
+```
+
