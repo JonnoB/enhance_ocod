@@ -7,34 +7,10 @@ editor_options:
   chunk_output_type: console
 ---
 
-jonno
 
-THe prices should be updated and the change in price calculated over the brexit period and probably the last crash, this will let us see if areas with high numbers of empty property have higher volatility
+This markdown performs the analysis for the paper. R is used as the original empty-homes paper used R and so continuing its use for the analysis allowed for code re-use.
 
-#Fascinating law change in minneapolis. 
-Minneapolis Saw That NIMBYism Has Victims
-Single-family zoning hurts a lot of people. In Minnesota’s largest city, reformers put them front and center.
-Richard D. Kahlenberg
-Senior fellow at The Century Foundation 
-
-https://www.theatlantic.com/ideas/archive/2019/10/how-minneapolis-defeated-nimbyism/600601/?utm_campaign=the-atlantic&utm_medium=social&utm_term=2019-10-24T10%3A00%3A24&utm_source=facebook&utm_content=edit-promo&fbclid=IwAR30lz6cF4-vXkNDRBvJ_ZWDcoVJp8JjJMOfXc9JnQBYp9jz2Pfp8d0Hudk
-
-non paywall article
-https://www.southwestjournal.com/news/2019/10/triplex-change-slated-for-2040s-first-day/
-
-
-
-Sam Comber and Dani Arribas Bell
-Machine learning innovations in address matching: A practical comparison of word2vec and CRFs
- https://doi.org/10.1111/tgis.12522
-
-#NExt MOOOVE
-## add in bonnie Scotland, which is vastly easier than doing England and wales becuase they are well organised
-https://statistics.gov.scot/resource?uri=http%3A%2F%2Fstatistics.gov.scot%2Fdata%2Fhousehold-estimates
-
-##Aggregation. 
-
-Aggregating the total values does not seem to be working well, the weights seem all over the place, this needs to be fixed.
+#Setup packages and folders
 
 ```{r}
 packages <- c("tidyverse", "lubridate","spdep", "sf" ,"readxl", "sp","rgdal", "rgeos","forcats", "stringr", "data.table", "xtable")
@@ -60,7 +36,11 @@ TexTables <- "/home/jonno/Dropbox/Apps/ShareLaTeX/Offshore London paper/Tables"
 #suppressMessages(source(file.path(CommonCode, "AuxdataLoad.R")))
 ```
 
-#Postcodes for London
+##Load data
+
+The next group of chunks load all the data necessary for the analysis
+
+##Postcode data
 
 The postcode data also includes upto date deprivation data
 
@@ -78,10 +58,9 @@ postcodes_df <- read_csv(unz(file.path(basewd, "ONSPD_NOV_2021_UK.zip"), "Data/O
 
 ```
 
+##Price data
 
 ```{r}
-
-
 
 prices <- list.files(file.path(basewd, "price_paid_files"), full.names = T) %>%
   map_df(~{
@@ -105,7 +84,7 @@ prices <- list.files(file.path(basewd, "price_paid_files"), full.names = T) %>%
 ```
 
 
-#Load low use data
+##Load low-use data
 
 This is the low use data processed in the same way as the 2019 paper.
 
@@ -117,7 +96,7 @@ I should think about whether I need to add more here or not
 
 ```
 
-#airbnb data
+##Airbnb data
 
 ```{r}
 
@@ -128,7 +107,10 @@ airbnb_df <- process_airnbnb_data(LSOAshapedata, postcodes_df, airbnb_csv = file
 
 ```
 
-#offshore
+##Offshore data
+
+The offshore data that has so far been processed in Python is loaded here. 
+The last script to process this data before it's final state was "Analysing the ocod dataset.ipynb"
 
 ```{r}
 #This file is the output of the Analysing OCOD ipynb
@@ -142,7 +124,7 @@ offshore_df <- read_csv(file.path(basewd, "ocod_lsoa.csv")) %>%
 
 ```
 
-#Bind key variables together
+##Bind key variables together
 
 This chunk takes the total homes, the empty homes, the offshore homes, the Airbnb homes and the multiple indices of deprivation and binds them together by LSOA.
 
@@ -163,14 +145,17 @@ all_variables <- postcodes_df %>% select(LSOA11CD, MSOA11CD, LAD11CD, LAD11NM, i
 mutate_if(is.numeric,coalesce,0) %>%
   #there are a few straggler LSOA with no homes I don't know why but the number is small so I will ignore it
   #These are removed to not cause issues in the analysis
-  filter(homes != 0)
+  filter(homes != 0) %>%
+  calc_all_unconventioal(.)
 
 all_variables_lad <- all_variables %>%
   group_by(LAD11CD) %>%
   summarise(homes = sum(homes),
             low_use = sum(low_use),
             offshore = sum(offshore),
-            airbnb = sum(airbnb)) %>%
+            airbnb = sum(airbnb),
+            unconventional = sum(unconventional),
+            unconventional_overlapped = sum(unconventional_overlapped)) %>%
   left_join(postcodes_df %>% select(LAD11CD, LAD11NM) %>% distinct())
 
 
@@ -179,29 +164,7 @@ cor(all_variables$low_use, all_variables$imd_rank, method = "kendall")
 
 ```
 
-#Price adaptor
-
-There is something weird with the prices when they are missing from the geographies
-
-```{r}
-
-price_test <- prices %>%
-  filter(LAD11CD=="E09000020") %>%
-  group_by(MSOA11CD) %>%
-  summarise(counts = n())
-
-length(unique(price_test$LSOA11CD))
-
-
-test[!(unique(test$LSOA11CD) %in% unique(price_test$LSOA11CD)),]
-
-length(unique(df$MSOA11CD))
-test <- DATAdf  %>%
-  filter(LAD11CD=="E09000020")
-
-```
-
-#sample prices monte-carlo
+#Sample prices monte-carlo
 
 ```{r}
 
@@ -234,7 +197,7 @@ test_data <- tibble(MSOA11CD = c( "E02000577" ,  "E02000578"# , "E02000579","E02
 
 
 
-all_vars_monte <- c("low_use", "airbnb", "offshore") %>% map(~{
+all_vars_monte <- c("low_use", "airbnb", "offshore", "unconventional", "unconventional_overlapped") %>% map(~{
   
   file_path <- file.path(basewd, "samples_by_type", paste0(.x, ".csv"))
   
@@ -299,7 +262,7 @@ table(test$name, test$rank_value)
 test <- all_vars_monte_df %>%
   left_join(all_variables_lad %>% ungroup %>%
   rename(total = homes) %>%
-  pivot_longer(cols = c(low_use, offshore, airbnb, total), values_to = "counts")
+  pivot_longer(cols = c(low_use, offshore, airbnb, total, unconventional, unconventional_overlapped), values_to = "counts")
 ) %>%
   mutate(total_value = counts *value) 
 
@@ -311,12 +274,15 @@ test_per_sim <- test %>%
 
 
 test_per_sim %>%
+  filter(name != "unconventional_overlapped") %>%
+  mutate(name = fct_relevel(name, "total", after = Inf)) %>%
   ggplot(aes(x = name, y =  mean_value, fill = name)) + geom_boxplot() +
   labs(x = "property type", y = "mean price per property", title = "Comparison of mean property price by type across 501 simulations")
 ggsave(file.path(Figures, "mean_price_london.pdf"))
 
 test_per_sim  %>%
-  filter(name != "total") %>%
+  filter(name != "total",
+         name != "unconventional_overlapped") %>%
   ggplot(aes(x = name, y =  total_value, fill = name)) + geom_boxplot() +
   labs(x = "property type", y = "total value by property type", title = "Comparison of total property value by type across 501 simulations")
 ggsave(file.path(Figures, "total_value_london.pdf"))
@@ -331,7 +297,8 @@ test_per_sim%>% ungroup %>%
 
 ## Entropy
 
-calculating the entropy of the data across the LSOA
+Calculating the entropy of the data across the LSOA
+Note the entropy is in shannons
 
 ```{r}
 entropy_val <- function(vect){
@@ -382,21 +349,6 @@ ggsave(file.path(Figures, "entropy_boxplot_london.pdf"))
 ```
 
 
-#check out UPRN etc
-
-```{r}
-
-zip_folder <- "/home/jonno/Downloads"
-NSUL_path <-  file.path(zip_folder, "NSUL_JAN_2022.zip")
-
-master <- as.character(unzip(NSUL_path, list = TRUE)$Name)
-# load the first file "file1.csv"
-data <- read.csv(unz(NSUL_path, "Data/NSUL_JAN_2022_LN.csv"), header = TRUE,
-                 sep = ",") 
-
-```
-
-
 #plot map of London
 ```{r}
 {
@@ -435,7 +387,7 @@ MSOAshapedata <- "~/Dropbox/SSE/Empty Homes/ShapeFiles/Middle_Layer_Super_Output
   filter(msoa11cd %in% postcodes_df$MSOA11CD) 
 
   MSOAshape <- MSOAshape %>%
-  left_join(c("homes","offshore", "airbnb", "low_use") %>%
+  left_join(c("homes","offshore", "airbnb", "low_use", "unconventional") %>%
   map_df(~{
     
     tibble(msoa11cd = MSOAshape$msoa11cd, name = .x)
@@ -447,12 +399,12 @@ MSOAshapedata <- "~/Dropbox/SSE/Empty Homes/ShapeFiles/Middle_Layer_Super_Output
   #Population estimates may be out of date. Newham has more offshore properties than homes.
 MSOAshape <- all_variables %>% 
   group_by(MSOA11CD) %>%
-  summarise(across(.cols = homes:offshore, .fns = sum)) %>%
+  summarise(across(.cols = c(unconventional,airbnb, low_use, offshore, homes), .fns = sum)) %>% #homes:offshore
               # mutate(low_use = (low_use/homes)) %>%
               #        offshore = (offshore/sum(offshore)) ,
               #        airbnb = (airbnb/sum(airbnb))) %>%
-  select(msoa11cd = MSOA11CD, homes:offshore) %>%
-  pivot_longer(., cols = c(homes,low_use, airbnb, offshore)) %>%
+  select(msoa11cd = MSOA11CD,unconventional,low_use, airbnb, offshore, homes) %>%
+  pivot_longer(., cols = c(unconventional,low_use, airbnb, offshore, homes)) %>%
   full_join(MSOAshape, .) %>%
   group_by(name) %>%
   mutate(
@@ -461,7 +413,9 @@ MSOAshape <- all_variables %>%
     non_zero = unique(sort(value2,partial=2))[2],
     value2 = ifelse(!is.finite(value2), non_zero, value2),
     value3 = (value/sum(value))*log(value),
-    value3 = ifelse(is.finite(value3),value3, 0))
+    value3 = ifelse(is.finite(value3),value3, 0),
+    value4 = log10(value/sum(value))
+    )
 }
 
 
@@ -471,14 +425,23 @@ MSOAshape <- all_variables %>%
 
 
 MSOAshape %>%
-  filter(name =="low_use") %>%
+  filter(name != "homes") %>%
 ggplot() +
-   geom_sf(aes(fill = value),  colour = NA, lwd = 0, pch = 0) +
+   geom_sf(aes(fill = value4),  colour = NA, lwd = 0, pch = 0) +
   facet_wrap(facets = ~name, nrow = 2) +
   scale_fill_viridis_c() +
   labs(title = "The distribution of the property types across London log base 10 scale", 
        fill = "log10(P)")
 ggsave(file.path(Figures, "property_maps.pdf"))
+
+
+MSOAshape %>%
+  filter(name =="offshore") %>%
+ggplot() +
+   geom_sf(aes(fill = value2),  colour = NA, lwd = 0, pch = 0) +
+  scale_fill_viridis_c() +
+  labs(title = "The distribution of the offshore property across London log base 10 scale", 
+       fill = "log10(P)")
 
 ```
 
@@ -517,7 +480,14 @@ morans_df
 
 ```
 
-# comparing prices for nested addresses and normal
+#Nested vs normal
+
+The offshore properties come in a nested and a normal forms. Normal properties are a single property per line. In contrast nested properties have multiple properties per-line. After the parsing and expanding process shown in "expanding tagged addresses.ipynb" the data is in tidy format with a single address per line. The data is coded with the original title number, a within title number and a globally unique title number.
+
+The below chunks explore whether there is a measurable difference between the nested and normal offshore properties.
+As previously the properties used are all classed as domestic.
+
+##Load and sample nested data
 
 ```{r}
 
@@ -660,6 +630,7 @@ MSOAshape_nested <- all_variables_nested %>%
 
 
 
+
 morans_df_nested <-c("normal", "nested") %>%
   map_df(~{
     
@@ -680,14 +651,93 @@ morans_df_nested <-c("normal", "nested") %>%
 morans_df_nested
 
 
+test <- MSOAshape_nested %>%
+  ungroup %>%
+  group_by(name) %>%
+  mutate(
+   # perc = value/homes,
+    value2 = log10(value/sum(value)))
+
+test2 <- unique(sort(test$value2,partial=2))[2]
+
+test %>% mutate(non_zero = test2,
+    value2 = ifelse(!is.finite(value2), non_zero, value2))  %>%
+  filter(name =="homes") %>%
+ggplot() +
+   geom_sf(aes(fill = value2),  colour = NA, lwd = 0, pch = 0) +
+  facet_wrap(facets = ~name, nrow = 2) +
+  scale_fill_viridis_c() +
+  labs(title = "The distribution of the property types across London log base 10 scale", 
+       fill = "log10(P)")
+
 ```
+
+##map
+
+This map shows the distribution of nested and non-nested offshore properties
+MSOA where there is not data are shaded grey
+
+```{r}
+MSOAshapedata <- "~/Dropbox/SSE/Empty Homes/ShapeFiles/Middle_Layer_Super_Output_Areas_December_2011_Super_Generalised_Clipped_Boundaries_in_England_and_Wales"
+{
+  MSOAshape_nested <- st_read(MSOAshapedata) %>%
+  filter(msoa11cd %in% postcodes_df$MSOA11CD) 
+
+  MSOAshape_nested <- MSOAshape_nested %>%
+  left_join(c("normal", "nested") %>%
+  map_df(~{
+    
+    tibble(msoa11cd = MSOAshape_nested$msoa11cd, name = .x)
+    
+    
+    
+  }))
+  
+  #Population estimates may be out of date. Newham has more offshore properties than homes.
+MSOAshape_nested <- all_variables_nested %>% 
+  group_by(MSOA11CD) %>%
+  summarise(across(.cols = c(normal, nested), .fns = sum)) %>%
+  select(msoa11cd = MSOA11CD, normal, nested) %>%
+  pivot_longer(., cols =c(normal, nested)) %>%
+  full_join(MSOAshape_nested, .) %>%
+  group_by(name) %>%
+  mutate(
+    value = ifelse(is.na(value), 0, value),
+    value2 = log10(value/sum(value)),
+    value2 = ifelse(is.na(value2), 0, value2),
+    non_zero = unique(sort(value2,partial=2))[2],
+    value2 = ifelse(!is.finite(value2), non_zero, value2),
+    value3 = log10(value/sum(value))
+    )
+}
+
+MSOAshape_nested %>%
+  #filter(name =="homes") %>%
+ggplot() +
+   geom_sf(aes(fill = value3),  colour = NA, lwd = 0, pch = 0) +
+  facet_wrap(facets = ~name) +
+  scale_fill_viridis_c() +
+  labs(title = "Nested vs normal offshore domestic property", 
+       fill = "log10(P)")
+```
+
 
 ##nested conclusion
 
 The nested addresses are substantially cheaper and more concentrated than the normal offshore properties. They also have almost no spatial auto-corellation whilst the normal offshore has high spatial auto corellation. This points to the different natures of the property types. Nested properties represent portfolios within or consisting of a housing development whilst, the onormal offshore property is not and more likely to be owned by an individual.
 
 
-# ocod cleaned expanded tests
+#Future work
+
+Add in Scotland, which is vastly easier than doing England and wales because they are well organised
+https://statistics.gov.scot/resource?uri=http%3A%2F%2Fstatistics.gov.scot%2Fdata%2Fhousehold-estimates
+
+
+#Additional bits
+
+This code is not used in the project and is only included for completness
+
+## ocod cleaned expanded tests
 
 ```{r}
 
@@ -724,4 +774,35 @@ voa <- voa_base %>%
 table(grepl("ADVERTISING", voa_base$primary.description.text))
 
 ```
+
+
+
+##check out UPRN etc
+
+This section is not used as unfortuneately both the Land Registry and the VOA refuse to use the system
+
+```{r}
+
+# zip_folder <- "/home/jonno/Downloads"
+# NSUL_path <-  file.path(zip_folder, "NSUL_JAN_2022.zip")
+# 
+# master <- as.character(unzip(NSUL_path, list = TRUE)$Name)
+# # load the first file "file1.csv"
+# data <- read.csv(unz(NSUL_path, "Data/NSUL_JAN_2022_LN.csv"), header = TRUE,
+#                  sep = ",") 
+
+```
+
+
+##Fascinating law change in minneapolis. 
+Minneapolis Saw That NIMBYism Has Victims
+Single-family zoning hurts a lot of people. In Minnesota’s largest city, reformers put them front and center.
+Richard D. Kahlenberg
+Senior fellow at The Century Foundation 
+
+https://www.theatlantic.com/ideas/archive/2019/10/how-minneapolis-defeated-nimbyism/600601/?utm_campaign=the-atlantic&utm_medium=social&utm_term=2019-10-24T10%3A00%3A24&utm_source=facebook&utm_content=edit-promo&fbclid=IwAR30lz6cF4-vXkNDRBvJ_ZWDcoVJp8JjJMOfXc9JnQBYp9jz2Pfp8d0Hudk
+
+non paywall article
+https://www.southwestjournal.com/news/2019/10/triplex-change-slated-for-2040s-first-day/
+
 

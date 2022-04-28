@@ -6,6 +6,12 @@ editor_options:
 ---
 
 
+This markdown uses to leaflet to create interactive maps of the data. Leaflet can produce freestanding html files containing all data necessary to show your data superimposed over openstreetmap maps.
+
+This markdown is supposed to be run after running "London_empty_homes.Rmd" which is why not data is loaded.
+
+#Load packages
+
 ```{r}
 
 packages <- c("dplyr", "ggplot2", "rjson", "jsonlite", "leaflet", "RCurl")

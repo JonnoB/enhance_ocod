@@ -6,6 +6,19 @@ The paper cleans and enhances the publicly available [OCOD dataset](https://use-
 
 The repo contains all the code used in the paper as well as the datasets produced in it's creation.
 
+#Code
+
+The markdown and notebook files needed to re-create the work done in the paper as follows
+
+1. Unit tag and span cleaning.ipynb
+2. expanding tagged addresses.ipynb
+3. Analysing the ocod dataset.ipynb
+4. London_empty_homes.Rmd
+
+In order to run these scripts you must download several opensource datasets produced by the UK government.
+Please see the paper's data section in the method for details.
+
+# Data
 The datasets held in this repo are
 
 - json file of NER labels produced by the [progammatic](https://programmatic.humanloop.com/) weak labelling process
