@@ -3,3 +3,5 @@ test_proj2
 test_proj3
 humanloop_clean/
 humanloop_1_2/.humanloop/
+__pycache__
+.ipynb_checkpoints
