@@ -7,6 +7,7 @@ editor_options:
   chunk_output_type: console
 ---
 
+#Introduction
 
 This markdown performs the analysis for the paper. R is used as the original empty-homes paper used R and so continuing its use for the analysis allowed for code re-use.
 
@@ -56,6 +57,18 @@ postcodes_df <- read_csv(unz(file.path(basewd, "ONSPD_NOV_2021_UK.zip"), "Data/O
 
 
 
+#THe mean number of MSOA per LAD
+test <- postcodes_df %>%
+  distinct(MSOA11CD, LAD11CD) %>%
+  group_by(LAD11CD) %>%
+  summarise(counts = n())
+
+mean(test$counts)
+median(test$counts)
+
+test %>%
+  ggplot(aes(counts)) +geom_density()
+  
 ```
 
 ##Price data
@@ -73,14 +86,6 @@ prices <- list.files(file.path(basewd, "price_paid_files"), full.names = T) %>%
     left_join(., postcodes_df,
               by = c("X4"="Postcode"))
 
-  
-  test <- prices %>%
-    filter(grepl("one hyde", X8, ignore.case = T))
-  
-  
-  test <- prices %>%
-    group_by(MSOA11CD) %>%
-    summarise(counts = n())
 ```
 
 
@@ -99,6 +104,8 @@ I should think about whether I need to add more here or not
 ##Airbnb data
 
 ```{r}
+
+#airbnb data comes with coordinates not addresses so it is combined with the LSOA shape data to get it in the same format as the other data
 
 LSOAshapedata <- file.path("~/Dropbox/SSE/Empty Homes","ShapeFiles",
                            "Lower_Layer_Super_Output_Areas_December_2011_Generalised_Clipped__Boundaries_in_England_and_Wales")
@@ -245,7 +252,7 @@ all_vars_monte_df %>%
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
 ggsave(file.path(Figures, "mean_price_per_lad.pdf"))
 
-test <-all_vars_monte_df %>%
+test <- all_vars_monte_df %>%
   group_by(LAD11CD, name) %>%
   summarise(mean_value = mean(value)) %>%
   group_by(LAD11CD) %>%
@@ -256,31 +263,31 @@ table(test$name, test$rank_value)
 ```
 
 
+##Mean value calcs
+
 ```{r}
 
 
-test <- all_vars_monte_df %>%
+mean_total_value <- all_vars_monte_df %>%
   left_join(all_variables_lad %>% ungroup %>%
   rename(total = homes) %>%
   pivot_longer(cols = c(low_use, offshore, airbnb, total, unconventional, unconventional_overlapped), values_to = "counts")
 ) %>%
-  mutate(total_value = counts *value) 
-
-test_per_sim <- test %>%
+  mutate(total_value = counts *value)  %>%
   group_by(id, name) %>%
   summarise(total_value = sum(total_value),
             counts = sum(counts)) %>%
   mutate(mean_value = total_value/counts)
 
 
-test_per_sim %>%
+mean_total_value %>%
   filter(name != "unconventional_overlapped") %>%
   mutate(name = fct_relevel(name, "total", after = Inf)) %>%
   ggplot(aes(x = name, y =  mean_value, fill = name)) + geom_boxplot() +
   labs(x = "property type", y = "mean price per property", title = "Comparison of mean property price by type across 501 simulations")
 ggsave(file.path(Figures, "mean_price_london.pdf"))
 
-test_per_sim  %>%
+mean_total_value  %>%
   filter(name != "total",
          name != "unconventional_overlapped") %>%
   ggplot(aes(x = name, y =  total_value, fill = name)) + geom_boxplot() +
@@ -290,12 +297,12 @@ ggsave(file.path(Figures, "total_value_london.pdf"))
 
 #There are just a lot more low use properties counter balancing the substantially higher value of offshore properties
 #However, it should be remembered that offshore properties overlap with low-use properties.
-test_per_sim%>% ungroup %>%
+mean_total_value %>% ungroup %>%
   group_by(name) %>%
   summarise(across(.cols = c(-id), .fns = c(mean, median))) 
 ```
 
-## Entropy
+# Entropy
 
 Calculating the entropy of the data across the LSOA
 Note the entropy is in shannons
@@ -313,13 +320,14 @@ entropy_val <- function(vect){
 
 
 
-c("homes", "low_use", "airbnb", "offshore") %>%
+entropy_df <- c("homes", "low_use", "airbnb", "offshore", "unconventional") %>%
   map_df(~{
     
     tibble(type = .x, bits = entropy_val(all_variables[[.x]]))
     
   }) 
 
+entropy_df
 
 #Calculating entropy using boostrap sampling shows that
 #The intervall of the entropy is small compared to the difference between
@@ -351,34 +359,34 @@ ggsave(file.path(Figures, "entropy_boxplot_london.pdf"))
 
 #plot map of London
 ```{r}
-{
-  LSOAshape <- st_read(LSOAshapedata) %>%
-  filter(lsoa11cd %in% postcodes_df$LSOA11CD) 
-
-  LSOAshape <- LSOAshape %>%
-    left_join(c("offshore", "low_use") %>%
-                map_df(~{
-                  
-                  tibble(lsoa11cd = LSOAshape$lsoa11cd, name = .x)
-                  
-                }))
-  
-  #Population estimates may be out of date. Newham has more offshore properties than homes.
-  
-  LSOAshape <- all_variables %>% 
-    group_by(LSOA11CD) %>%
-  summarise(across(.cols = homes:offshore, .fns = sum)) %>%
-              # mutate(low_use = (low_use/homes)) %>%
-              #        offshore = (offshore/sum(offshore)) ,
-              #        airbnb = (airbnb/sum(airbnb))) %>%
-  select(lsoa11cd = LSOA11CD, homes:offshore) %>%
-  pivot_longer(., cols = c(homes,low_use, airbnb, offshore)) %>%
-  full_join(LSOAshape, .) %>%
-  group_by(name) 
-  
-  
-  
-}
+# {
+#   LSOAshape <- st_read(LSOAshapedata) %>%
+#   filter(lsoa11cd %in% postcodes_df$LSOA11CD) 
+# 
+#   LSOAshape <- LSOAshape %>%
+#     left_join(c("offshore", "low_use") %>%
+#                 map_df(~{
+#                   
+#                   tibble(lsoa11cd = LSOAshape$lsoa11cd, name = .x)
+#                   
+#                 }))
+#   
+#   #Population estimates may be out of date. Newham has more offshore properties than homes.
+#   
+#   LSOAshape <- all_variables %>% 
+#     group_by(LSOA11CD) %>%
+#   summarise(across(.cols = homes:offshore, .fns = sum)) %>%
+#               # mutate(low_use = (low_use/homes)) %>%
+#               #        offshore = (offshore/sum(offshore)) ,
+#               #        airbnb = (airbnb/sum(airbnb))) %>%
+#   select(lsoa11cd = LSOA11CD, homes:offshore) %>%
+#   pivot_longer(., cols = c(homes,low_use, airbnb, offshore)) %>%
+#   full_join(LSOAshape, .) %>%
+#   group_by(name) 
+#   
+#   
+#   
+# }
 
 
 MSOAshapedata <- "~/Dropbox/SSE/Empty Homes/ShapeFiles/Middle_Layer_Super_Output_Areas_December_2011_Super_Generalised_Clipped_Boundaries_in_England_and_Wales"
@@ -480,7 +488,34 @@ morans_df
 
 ```
 
-#Nested vs normal
+#Metrics table
+
+This chunk creates a table for the metrics to be easily compared.
+
+```{r}
+
+
+#taken from 
+#https://stackoverflow.com/questions/39670918/replace-characters-in-column-names-gsub
+colClean <- function(x){ colnames(x) <- gsub("_", " ", colnames(x)); x } 
+
+
+mean_total_value %>% ungroup %>%
+  group_by(name) %>%
+  summarise(across(.cols = c(-id), .fns =mean)) %>%
+  rename(type = name) %>%
+  filter(type != "unconventional_overlapped") %>%
+  mutate(type = ifelse(type=="total", "homes", type) #changes total to type to match the names from the other metrics
+         ) %>%
+  left_join(entropy_df) %>% left_join(morans_df %>% select(-p_value), by = c("type"="name") ) %>%
+  mutate(total_value = total_value/1e9) %>% 
+  colClean(.) #%>% #remove the underscore for nicer tables
+  xtable(., caption = "The complete metrics list for the analysis of the main property types",
+         label = "tab:metrics_table")
+```
+
+
+#Nested vs single
 
 The offshore properties come in a nested and a normal forms. Normal properties are a single property per line. In contrast nested properties have multiple properties per-line. After the parsing and expanding process shown in "expanding tagged addresses.ipynb" the data is in tidy format with a single address per line. The data is coded with the original title number, a within title number and a globally unique title number.
 
@@ -590,12 +625,14 @@ all_vars_monte_nested_df %>%
 ```{r}
 
 
-c("nested", "normal") %>%
+entropy_nested <- c("nested", "normal") %>%
   map_df(~{
     
     tibble(type = .x, bits = entropy_val(all_variables_nested[[.x]]))
     
   }) 
+
+entropy_nested
 
 ```
 
@@ -649,27 +686,6 @@ morans_df_nested <-c("normal", "nested") %>%
 
 
 morans_df_nested
-
-
-test <- MSOAshape_nested %>%
-  ungroup %>%
-  group_by(name) %>%
-  mutate(
-   # perc = value/homes,
-    value2 = log10(value/sum(value)))
-
-test2 <- unique(sort(test$value2,partial=2))[2]
-
-test %>% mutate(non_zero = test2,
-    value2 = ifelse(!is.finite(value2), non_zero, value2))  %>%
-  filter(name =="homes") %>%
-ggplot() +
-   geom_sf(aes(fill = value2),  colour = NA, lwd = 0, pch = 0) +
-  facet_wrap(facets = ~name, nrow = 2) +
-  scale_fill_viridis_c() +
-  labs(title = "The distribution of the property types across London log base 10 scale", 
-       fill = "log10(P)")
-
 ```
 
 ##map
@@ -719,8 +735,35 @@ ggplot() +
   scale_fill_viridis_c() +
   labs(title = "Nested vs normal offshore domestic property", 
        fill = "log10(P)")
+ggsave(file.path(Figures, "property_maps_nested.pdf"))
 ```
 
+
+```{r}
+
+mean_total_value_nested <- all_vars_monte_nested_df %>%
+  left_join(all_variables_lad %>% ungroup %>%
+  rename(total = homes) %>%
+  pivot_longer(cols = c(low_use, offshore, airbnb, total, unconventional, unconventional_overlapped), values_to = "counts")
+) %>%
+  mutate(total_value = counts *value)  %>%
+  group_by(id, name) %>%
+  summarise(total_value = sum(total_value),
+            counts = sum(counts)) %>%
+  mutate(mean_value = total_value/counts)
+
+mean_total_value_nested  %>% ungroup %>%
+  group_by(name) %>%
+  summarise(across(.cols = c(-id), .fns =mean)) %>%
+  rename(type = name) %>%
+  left_join(entropy_nested) %>% left_join(morans_df_nested %>% select(-p_value), by = c("type"="name") ) %>%
+  mutate(total_value = total_value/1e9) %>% 
+    mutate(type = ifelse(type=="normal", "single", type)) %>%
+  colClean(.) %>% #remove the underscore for nicer tables
+  xtable(., caption = "The complete metrics list comparing nested and single offshore homes",
+         label = "tab:metrics_table_nested")
+
+```
 
 ##nested conclusion
 
