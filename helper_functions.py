@@ -1,5 +1,6 @@
 
 #the functions used by the empty homes project python notebooks
+import json
 import re
 import time
 import pandas as pd
@@ -95,6 +96,177 @@ def remove_overlapping_spans2(list_of_labels_dict):
 ##
 ## Expanding the addresses
 ##
+
+def load_cleaned_labels(file_path):
+    """
+    Used when the json file being loaded has already had overlaps removed using the json overlap removing
+    code from the unit tagging and span cleaning notebook
+    
+    N.B.
+    This function is clear and intemediary function and I would like to remove it when possible
+    This function is not neccessary when the denoising process has taken place
+
+    """
+    
+
+    with open(file_path, "r") as read_file:
+          all_entities_json = json.load(read_file)
+
+    all_entities = pd.json_normalize(all_entities_json, record_path = "labels", meta= ['datapoint_id', 'text'], meta_prefix = "meta.")
+
+    all_entities = all_entities.rename(columns = {'text':'label_text',
+    'meta.datapoint_id':'datapoint_id',
+    'meta.text':'text'})
+
+    all_entities = all_entities.sort_values(['datapoint_id', 'start'])
+
+    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label']).cumcount()
+    
+    return all_entities
+
+def remove_overlaps_jonno(x):
+    
+    """
+    This is my version of the overlap removal. It works but is quite slow.
+    Harry from Humanloop made a different version. Mine was at one point faster, not sure now.
+    This function only needs to be used if denoising process has not been used
+    """
+    
+    #this functions is modified from 
+    #https://stackoverflow.com/questions/57804145/combining-rows-with-overlapping-time-periods-in-a-pandas-dataframe
+    x = x.copy()
+    #create a unique label, this is used for joining the data back on 
+    #and removes a reliance on the data being pre-sorted
+    x['unique_label'] = [*range(0,x.shape[0])]
+    #get the size of the spans
+    x['diff'] = (x['end']-x['start'])
+
+    
+    startdf = pd.DataFrame({'position':x['start'], 'unique_label':x['unique_label'], 'what':1})
+    enddf = pd.DataFrame({'position':x['end'], 'unique_label':x['unique_label'], 'what':-1})
+    mergdf = pd.concat([startdf, enddf]).sort_values('position')
+    mergdf['running'] = mergdf['what'].cumsum()
+    mergdf['newwin'] = mergdf['running'].eq(1) & mergdf['what'].eq(1)
+    mergdf['group'] = mergdf['newwin'].cumsum()
+    
+    #merge back on using uniqe label to ensure correct ordering
+    x = x.merge(mergdf.loc[mergdf['what'].eq(1),['unique_label','group']], how = 'left', on = 'unique_label')
+    #sort within group and keep only the largest
+    x = x.sort_values('diff', ascending=False).groupby(['group', 'datapoint_id'], as_index=False).first()
+
+    x.drop(['diff', 'unique_label', 'group'], axis = 1, inplace = True)
+    
+    x.reset_index(drop = True, inplace = True)
+
+    return(x)
+
+
+def load_data_with_overlaps_jonno(file_path):
+    
+    """
+    This function is used to load a json file that contains overlapping labels
+    It uses my version of the overlap remover
+    
+    """
+    
+    print('loading json')
+    with open(file_path, "r") as read_file:
+        all_entities_json = json.load(read_file)
+    
+    print('pre-processing data')
+
+    all_entities = pd.json_normalize(
+        all_entities_json["datapoints"],
+        record_path=["programmatic", "results"],
+        meta=["data", "id"],
+        #record_prefix="result_stuff.",
+        meta_prefix="data_stuff.",
+        errors="ignore",
+    )
+    all_entities = all_entities.rename(columns = {'data_stuff.id':'datapoint_id',
+                                                 'text':'label_text'})
+
+    all_entities["text"] = all_entities["data_stuff.data"].map(lambda x: x["text"])
+
+    #all_entities.drop(['data_stuff.data'], axis = 1, inplace = True)
+
+    all_entities = all_entities.sort_values(['datapoint_id', 'start'])
+
+    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label']).cumcount()
+
+    all_entities.drop(columns = ['data_stuff.data'], inplace = True)
+    
+    print('renmoving overlaps this takes time')
+    all_entities = all_entities.groupby(['datapoint_id']).apply(remove_overlaps_jonno)
+
+    all_entities.reset_index(drop = True, inplace = True)
+    
+    return all_entities
+
+def remove_overlaps_harry(
+    spans: pd.DataFrame, groupby="datapoint_id", start="start", end="end"
+):
+    """
+    This function was made by Harry from Humanloop to deal with the overlaps problem
+    Removes rows from a DataFrame where start:end overlap.
+
+    Attempts to keep the longer of the overlapping spans.
+    """
+    spans_to_remove = []
+    for datapoint_id, datapoint_spans in spans.groupby(groupby):
+        intervals = datapoint_spans.apply(
+            lambda x: pd.Interval(left=getattr(x, start), right=getattr(x, end)), axis=1
+        )
+        for i, (index_a, interval_a) in enumerate(intervals.iteritems()):
+            for j, (index_b, interval_b) in enumerate(
+                intervals.iloc[i + 1 :].iteritems()
+            ):
+                if interval_a.overlaps(interval_b):
+                    # print(i, j, index_a, index_b, interval_a, interval_b)
+                    # Overlapping ground truths at index_a and index_b.
+                    # Keep only longer of the two.
+                    if interval_a.length >= interval_b.length:
+                        spans_to_remove.append(index_b)
+                    else:
+                        spans_to_remove.append(index_a)
+
+    return spans[~spans.index.isin(spans_to_remove)]
+
+
+def load_data_with_overlaps_harry(file_path):
+    
+    """
+    This is Harry from HUmanloop's of the overlap removal.
+    This function only needs to be used if denoising process has not been used
+    """
+
+    with open(file_path, "r") as f:
+        data = json.load(f)
+
+    df = pd.json_normalize(
+        data["datapoints"],
+        # record_path=["programmatic", "aggregateResults"],
+        record_path=["programmatic", "results"],
+        meta=["data", "id"],
+        record_prefix="result_stuff.",
+        meta_prefix="data_stuff.",
+        errors="ignore",
+    )
+    df["full_text"] = df["data_stuff.data"].map(lambda x: x["text"])
+
+    df = all_entities.copy()
+
+
+
+    new_df = remove_overlaps_harry(
+        df, groupby="data_stuff.id", start="result_stuff.start", end="result_stuff.end"
+    )
+
+    all_entities = all_entities.sort_values(['datapoint_id', 'start'])
+
+    all_entities.reset_index(drop = True, inplace = True)
+    
+    return new_df
 
 def expand_multi_id(multi_id_string):
     #the function takes a string that is in the form '\d+(\s)?(-|to)(\s)?\d+'
