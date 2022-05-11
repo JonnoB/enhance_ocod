@@ -1,2 +1,0 @@
-[44]  2022-05-04 15:39:47.334 | INFO     | sentry_sdk.integrations.logging:sentry_patched_callhandlers:86 - Run run_TzsCGdkDOMTDc8d60O2US for labelling function no_road_near succeeded over 94088 results.
-[44]  2022-05-04 15:50:59.263 | INFO     | sentry_sdk.integrations.logging:sentry_patched_callhandlers:86 - Run run_k2JvJfbDrkEFJtlQz21_4 for labelling function carpark_id_fn succeeded over 94088 results.

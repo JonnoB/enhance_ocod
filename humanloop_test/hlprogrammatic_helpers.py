@@ -25,7 +25,7 @@ building_regex = r"\b(school|church|workshops|court|house|inn|tavern|hotel|cinem
 
 xx_to_yy_regex = r"((\d+)(\s?(to|-)\s?)(\d+)\b)"
 
-building_special = r"(the knightsbridge(?=,)|chichester rents|belgravia gate|the chilterns|the Belvedere|(one hyde park)(?=,)|park plaza westminster bridge|[a-z\s']+exchange)"
+building_special = r"(the knightsbridge(?=,)|chichester rents|belgravia gate|the chilterns|the Belvedere|(one hyde park)(?=,)|park plaza westminster bridge|"+multi_word_no_land+"exchange)"
 
 other_classes_regex = r"(airspace|unit|plot|store|storage|storage pod|\broom|suite|studio)"
 businesses_regex = r"((cinema)|(hotel)|(office)|(pub)|(business)|(cafe)|(restaurant)|(unit)|(store))"

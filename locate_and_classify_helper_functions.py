@@ -30,8 +30,9 @@ def filter_contiguous_numbers(number_list, number_filter):
     else:
         out = number_list
     return out
-
-def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1):
+#the loop iks quite fast considering the rest of the process so I am not sure printing is necessary anymore
+#However, I want to keep it just in case so set the default to a very large numebr.
+def expand_dataframe_numbers(df2, column_name, print_every = 1000000, min_count = 1):
     #cycles through the dataframe and and expands xx-to-yy formats printing every ith iteration
     temp_list = []
     expand_time = 0
@@ -66,7 +67,7 @@ def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1
         filter_time =filter_time + (end_filter_time - end_expand_time)
         make_dataframe_time = make_dataframe_time +(end_make_dataframe_time - end_filter_time)
         
-        if i%print_every==0: print("i=", i, " expand time,"+ str(round(expand_time, 3)) +
+        if (i%print_every==0) & (i>0): print("i=", i, " expand time,"+ str(round(expand_time, 3)) +
                            " filter time" + str(round(filter_time,3)) + 
                            " make_dataframe_time " + str(round(make_dataframe_time,3)))
     
@@ -331,7 +332,7 @@ def create_all_street_addresses(voa_businesses, target_lad, return_columns = ['s
     
     temp.rename(columns = {'full_property_identifier': 'business_address'}, inplace = True)
 
-    temp_multi = temp.loc[temp['is_multi']==True]#, ['street_number', 'is_multi']]
+    temp_multi = temp.loc[temp['is_multi']==True].copy()
 
     filter_types = [find_filter_type(x) for x in temp_multi['street_number']]
     
@@ -544,7 +545,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
 
     temp = temp[temp['paon'].str.len()!=0].groupby(['paon', 'lad11cd']).size().reset_index().rename(columns = {0:'counts'})
 
-    pp_temp = price_paid_df[['paon', 'lad11cd','oa11cd' , 'lsoa11cd']]
+    pp_temp = price_paid_df[['paon', 'lad11cd','oa11cd' , 'lsoa11cd']].copy()
 
     pp_temp['paon'] = pp_temp['paon'].str.replace(r"\d+", "", regex = True).replace(r"and|\&|-|,", "", regex = True).replace(r"^ +| +$", r"", regex=True)
 
@@ -622,18 +623,22 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
 
     return ocod_data
 
-def substreet_matching(ocod_data, price_paid_df, voa_businesses):
+def substreet_matching(ocod_data, price_paid_df, voa_businesses, print_lads = False, print_every = 100):
     """"
     Some streets are on the boundary of LSOA this section uses the street number to match to the nearest lsoa.
     """
     filled_lsoa_list = []
-
+    i = 1
     unique_lad_codes = ocod_data[ocod_data['street_name'].notnull() & ocod_data['street_number'].notnull() & ocod_data['lsoa11cd'].isnull()]['lad11cd'].unique()
 
     for target_lad in unique_lad_codes:
-        print(target_lad)
+        if print_lads: print(target_lad)
+            
+        if i%print_every==0: print("lad ", i, " of "+ str(round(len(unique_lad_codes), 3)))
+        i = i+1
+        
         #subset to the relevat rows within a single lad
-        missing_lsoa_df = ocod_data[ocod_data['street_name'].notnull() & ocod_data['street_number'].notnull() & ocod_data['lsoa11cd'].isnull() & (ocod_data['lad11cd']==target_lad)]
+        missing_lsoa_df = ocod_data[ocod_data['street_name'].notnull() & ocod_data['street_number'].notnull() & ocod_data['lsoa11cd'].isnull() & (ocod_data['lad11cd']==target_lad)].copy()
         missing_lsoa_df.loc[:,'street_number2'] = missing_lsoa_df.loc[:,'street_number'].str.replace(r"^.*(?=\b[0-9]+$)", "", regex = True).str.replace(r"[^\d]", "", regex = True)
 
         target_street_names = missing_lsoa_df['street_name2'].unique()
@@ -655,8 +660,8 @@ def substreet_matching(ocod_data, price_paid_df, voa_businesses):
         
 
         for target_road in target_street_names:
-            print(target_road)
-            missing_lsoa_road = missing_lsoa_df[missing_lsoa_df['street_name2']== target_road ]
+            #print(target_road)
+            missing_lsoa_road = missing_lsoa_df[missing_lsoa_df['street_name2']== target_road ].copy()
             temp_road = temp_lsoa[temp_lsoa['street_name2'] ==target_road ]
 
             if len(temp_road)>0:
@@ -714,7 +719,7 @@ def counts_of_businesses_per_oa_lsoa(ocod_data, voa_businesses):
 
     return ocod_data
 
-def voa_address_match_all_data(ocod_data, voa_businesses):
+def voa_address_match_all_data(ocod_data, voa_businesses, print_lads = False, print_every =50):
     
     """
     Cycles through all addresses and attempts to match to the VOA database
@@ -722,11 +727,14 @@ def voa_address_match_all_data(ocod_data, voa_businesses):
     all_lads = ocod_data.lad11cd.unique()
 
     matched_lads_list = []
-
+    i = 0
     all_lads = [x for x in all_lads if str(x) != 'nan']
     #see which roads match a road in voa data set for each local authority
     for target_lad in all_lads:
-        print(target_lad)
+        if print_lads: print(target_lad)
+            
+        if i%print_every==0: print("address matched ", i, "lads of "+ str(round(len(all_lads), 3)))
+        i = i+1
         #temp['matches_business_address'] = business_address_matcher(temp['street_name'], temp['street_number'], voa_businesses, target_lad)
         matched_lads_list = matched_lads_list + [massaged_address_match(ocod_data, voa_businesses, target_lad)]
 
@@ -752,9 +760,7 @@ def classification_type1(ocod_data):
             ocod_data['property_address'].str.contains(r"^[a-z\s']+\b(?:land(?:s)?|plot(?:s)?)\b", case = False)==True, #land with words before it
             ocod_data['building_name'].str.contains(r'\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)')==True, #pubs in various guises
             ocod_data['oa_busi_building'].notnull(),#a business building was matched
-            ocod_data['business_address'].notnull(),
-            ocod_data['business_counts']==0, #if there are no businesses in the oa then it is a domestic
-            ocod_data['lsoa_business_counts']==0, #if there are no businesses in the lsoa then it is a domestic
+            ocod_data['business_address'].notnull()
 
         ], 
         [
@@ -767,9 +773,7 @@ def classification_type1(ocod_data):
             'land',
             'business',
             'business',
-            'business',
-            'domestic',
-            'domestic',
+            'business'
         ], 
         default='unknown'
     )
@@ -779,7 +783,7 @@ def classification_type1(ocod_data):
     temp_fill = ocod_data[~ocod_data['class'].isin(['unknown', 'airspace', 'carpark']) & (ocod_data['within_larger_title']==True)].groupby(['title_number', 'class']).\
     size().reset_index()[['title_number', 'class']].drop_duplicates()
 
-    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class']=='unknown') & (ocod_data['within_larger_title']==True)]
+    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class']=='unknown') & (ocod_data['within_larger_title']==True)].copy()
 
     temp.drop('class', axis = 1, inplace = True)
 
@@ -793,13 +797,18 @@ def classification_type1(ocod_data):
 def classification_type2(ocod_data):
     
     ocod_data['class2'] = np.select(
-        [
+        [   (ocod_data['class']=='unknown') & ((ocod_data.property_address.str.contains('^(?:the )?unit') & ocod_data.property_address.str.contains('park', regex = True))==True), #contains the word unit and park
+            (ocod_data['class']=='unknown') & (ocod_data['business_counts']==0), #if there are no businesses in the oa then it is a domestic
+            (ocod_data['class']=='unknown') & (ocod_data['lsoa_business_counts']==0), #if there are no businesses in the lsoa then it is a domestic
             (ocod_data['class']=='unknown') & (ocod_data['street_match']==True) & (ocod_data['street_name'].notnull()==True) & (ocod_data['street_number'].notnull()==True),
             (ocod_data['class']=='unknown') & (ocod_data['street_match']==False) & (ocod_data['street_name'].notnull()==True),
             (ocod_data['class']=='unknown') & (ocod_data['building_name'].notnull()==True)
 
         ], 
         [
+            'business',
+            'domestic',
+            'domestic',
             'domestic',
             'domestic',
             'domestic'
@@ -813,7 +822,7 @@ def classification_type2(ocod_data):
     temp_fill = ocod_data[~ocod_data['class2'].isin(['unknown', 'airspace', 'carpark']) & (ocod_data['within_larger_title']==True)].groupby(['title_number', 'class2']).\
     size().reset_index()[['title_number', 'class2']].drop_duplicates()
 
-    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class2']=='unknown') & (ocod_data['within_larger_title']==True)]
+    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class2']=='unknown') & (ocod_data['within_larger_title']==True)].copy()
 
     temp.drop('class2', axis = 1, inplace = True)
 
