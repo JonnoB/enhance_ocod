@@ -104,12 +104,12 @@ def preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup):
     takes the expanded ocod dataframe as the only argument
     """
     ##add in the geographic area data like lsoa etc
-    ocod_data['postcode2'] = ocod_data['postcode'].str.lower().str.replace("\s", "")
+    ocod_data['postcode2'] = ocod_data['postcode'].str.lower().str.replace("\s", "", regex = True)
 
     ocod_data = ocod_data.merge(postcode_district_lookup, 'left', left_on = "postcode2", right_on = "postcode2")
 
     ocod_data['street_name'] = ocod_data['street_name'].str.replace(r"^ +| +$", r"", regex=True)
-    ocod_data['street_number2'] = ocod_data['street_number'].str.replace(r"^.*(?=\b[0-9]+$)", "").str.replace(r"[^\d]", "", regex = True)
+    ocod_data['street_number2'] = ocod_data['street_number'].str.replace(r"^.*(?=\b[0-9]+$)", "", regex = True).str.replace(r"[^\d]", "", regex = True)
 
     #This stripped out versionof street name is used several times throughout the notebook
     ocod_data['street_name2'] = ocod_data.loc[:,'street_name'].str.replace(r"'", "", regex = True).\
@@ -538,7 +538,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
 
     temp = price_paid_df.copy()
 
-    temp['paon'] = temp['paon'].str.replace(r"\d+", "").replace(r"and|\&|-|,", "", regex = True).replace(r"^ +| +$", r"", regex=True)
+    temp['paon'] = temp['paon'].str.replace(r"\d+", "", regex = True).replace(r"and|\&|-|,", "", regex = True).replace(r"^ +| +$", r"", regex=True)
 
     temp = temp.groupby(['paon', 'lad11cd', 'lsoa11cd']).size().reset_index()
 
@@ -546,7 +546,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
 
     pp_temp = price_paid_df[['paon', 'lad11cd','oa11cd' , 'lsoa11cd']]
 
-    pp_temp['paon'] = pp_temp['paon'].str.replace(r"\d+", "").replace(r"and|\&|-|,", "", regex = True).replace(r"^ +| +$", r"", regex=True)
+    pp_temp['paon'] = pp_temp['paon'].str.replace(r"\d+", "", regex = True).replace(r"and|\&|-|,", "", regex = True).replace(r"^ +| +$", r"", regex=True)
 
     pp_temp = pp_temp.drop_duplicates()
 
@@ -634,7 +634,7 @@ def substreet_matching(ocod_data, price_paid_df, voa_businesses):
         print(target_lad)
         #subset to the relevat rows within a single lad
         missing_lsoa_df = ocod_data[ocod_data['street_name'].notnull() & ocod_data['street_number'].notnull() & ocod_data['lsoa11cd'].isnull() & (ocod_data['lad11cd']==target_lad)]
-        missing_lsoa_df.loc[:,'street_number2'] = missing_lsoa_df.loc[:,'street_number'].str.replace(r"^.*(?=\b[0-9]+$)", "").str.replace(r"[^\d]", "", regex = True)
+        missing_lsoa_df.loc[:,'street_number2'] = missing_lsoa_df.loc[:,'street_number'].str.replace(r"^.*(?=\b[0-9]+$)", "", regex = True).str.replace(r"[^\d]", "", regex = True)
 
         target_street_names = missing_lsoa_df['street_name2'].unique()
 
@@ -748,7 +748,7 @@ def classification_type1(ocod_data):
             ocod_data['property_address'].str.contains(r"^(?:the airspace|airspace)", case = False),
             ocod_data['property_address'].str.contains(r"penthouse|flat|apartment", case = False),
             ocod_data['address_match']==True,
-            ocod_data['property_address'].str.contains(r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel(?:\s)?lodge|business|cafe|^shop| shop|restaurant|home|^store(?:s)?\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|works|club,|advertising", case = False), 
+            ocod_data['property_address'].str.contains(r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|^store(?:s)?\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)", case = False), 
             ocod_data['property_address'].str.contains(r"^[a-z\s']+\b(?:land(?:s)?|plot(?:s)?)\b", case = False)==True, #land with words before it
             ocod_data['building_name'].str.contains(r'\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)')==True, #pubs in various guises
             ocod_data['oa_busi_building'].notnull(),#a business building was matched
@@ -837,7 +837,7 @@ def contract_ocod_after_classification(ocod_data, class_type = 'class2', classes
     
     temp = ocod_data[~ocod_data[class_type].isin(classes)]
 
-    ocod_data = pd.concat([ocod_data[ocod_data[class_type].isin(classes)], temp.groupby('title_number').first()]).sort_values(by = "unique_id")
+    ocod_data = pd.concat([ocod_data[ocod_data[class_type].isin(classes)], temp.drop_duplicates(subset ='title_number')]).sort_values(by = "unique_id")
 
     #when the unit type is a carparking space but the class is domestic it means that the address is a domestic property that explicitly mentions a car park
     ocod_data = ocod_data[~(ocod_data['unit_type'].str.contains(r"park|garage") & (ocod_data['class']=="domestic"))]
