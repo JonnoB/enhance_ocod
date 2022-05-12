@@ -15,13 +15,14 @@ args = sys.argv
 
 root_path = str(args[1])
 
-all_entities = load_cleaned_labels(root_path+'full_dataset_no_overlaps.json')
+
+ocod_data = load_and_prep_OCOD_data(root_path + 'OCOD_FULL_2022_02.csv')
+
+all_entities = spacy_pred_fn(spacy_model_path = root_path+'spacy_data/cpu/model-best', ocod_data = ocod_data)
 
 full_expanded_data = parsing_and_expansion_process(all_entities, expand_addresses = True)
 
 del all_entities #memory management
-
-ocod_data = load_and_prep_OCOD_data(root_path + 'OCOD_FULL_2022_02.csv')
 
 ocod_data = post_process_expanded_data(full_expanded_data, ocod_data)
 
@@ -29,8 +30,7 @@ del full_expanded_data #memory management
 
 print("Load ONSPD")
 postcode_district_lookup = load_postocde_district_lookup(root_path + "ONSPD_NOV_2021_UK.zip", "Data/ONSPD_NOV_2021_UK.csv")
-print("Load expanded ocod")
-ocod_data =  pd.read_csv(root_path+'OCOD_cleaned_expanded2.csv')
+
 print("Pre-process expanded ocod data")
 ocod_data = preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup)
 print("Load and pre-process the Land Registry price paid dataset")
@@ -66,4 +66,8 @@ ocod_data = classification_type2(ocod_data)
 print('Contract ocod dataset')
 ocod_data = contract_ocod_after_classification(ocod_data, class_type = 'class2', classes = ['domestic'] )
 
-ocod_data.to_csv(root_path+'OCOD_classes.csv')
+print('Process complete saving the enchanced ocod dataset to ' + root_path + 'enhanced_ocod_dataset.csv')
+
+ocod_data.to_csv(root_path+'enhanced_ocod_dataset.csv')
+
+#FINISH!

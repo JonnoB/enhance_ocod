@@ -23,6 +23,7 @@ this flag can be used to override which label the functions are uploaded for. Fo
 ```
 ./import-functions.py --project my_project --functions my_exported_functions/label_one --label label_two
 ./import-functions.py --project ./humanloop_1_3 --functions ./humanloop_1_2/export/labelling_functions_2022-04-29_16-29-07
+./import-functions.py --project ./humanloop_2 --functions ./humanloop_1_test/export/labelling_functions_2022-05-10_06-40-53
 ```
 
 would upload functions exported for label_one under the folder label_two. 

@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import numpy as np
 import time
+import spacy
 
 
 #This  module is supposed to contain all the relevant functions for parsing the LabeledS json file 
@@ -336,7 +337,7 @@ def spread_address_labels(df, all_multi_ids):
     """
     #pivot the columns so that each label class is it's own column and the value in the column is the text
 
-    temp_df = df[df.datapoint_id.isin(all_multi_ids)]
+    temp_df = df[df.datapoint_id.isin(all_multi_ids)].copy()
 
     temp_df['index'] = temp_df.index
     df = temp_df[['index', 'label', 'label_text']].pivot(index='index',columns='label',values='label_text')
@@ -510,3 +511,46 @@ def post_process_expanded_data(expanded_data, ocod_data):
        'multiple_address_indicator', 'price_paid' ,'property_address']].replace('block', np.NaN)
     
     return full_expanded_data
+
+
+def spacy_pred_fn(spacy_model_path, ocod_data):
+
+    """
+    This function predicts over the OCOD dataframe using a spacy model from the path arguement.
+    THe function is designed to be used with the CPU model but can be used with GPU. 
+    However, currently due to issues with the CUDA drivers I am only using CPU
+    """
+    print('Loading the spaCy model')
+    nlp1 = spacy.load(spacy_model_path) 
+
+    print('Adding the datapoint id and title number meta data to the property address')
+    ocod_context = [(ocod_data.loc[x,'property_address'], {'datapoint_id':x, 'title_number':str(ocod_data.title_number[x])}) for x in range(0,ocod_data.shape[0])]
+    i = 0
+    all_entities_json = []    
+    print('predicting over the OCOD dataset using the pre-trained spaCy model')    
+    for doc, context in list(nlp1.pipe(ocod_context, as_tuples = True)):
+
+        #This doesn't print as it is a stream not a conventional loop
+        #if i%print_every==0: print("doc ", i, " of "+ str(ocod_data.shape[0]))
+        #i = i+1
+
+        temp = doc.to_json()
+        temp.pop('tokens')
+        """
+        i = 0
+        #add the actual entity text to the json
+        for entity in doc.ents:
+            temp['ents'][i]['label_text'] = entity
+            i = i+1
+        """
+
+        temp.update({'datapoint_id':context['datapoint_id']})
+        all_entities_json = all_entities_json + [temp]
+
+    all_entities = pd.json_normalize(all_entities_json, record_path = "ents", meta= ['text', 'datapoint_id'])
+    print('extracting entity label text')
+    all_entities['label_text'] = [all_entities.text[x][all_entities.start[x]:all_entities.end[x]] for x in range(0,all_entities.shape[0])]
+    
+    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label']).cumcount()
+    
+    return all_entities
