@@ -80,3 +80,17 @@ The markdown and notebooks used in this paper are as follows.
 
 In order to run these scripts you must download several opensource datasets produced by the UK government.
 Please see the paper's data section in the method for details.
+
+# Citing this dataset
+
+If you use this dataset please cite
+
+XXXX
+
+# OGL notices
+
+- Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
+- Contains OS data © Crown copyright and database right 2022
+- Contains Royal Mail data © Royal Mail copyright and database right 2022
+- Source: Office for National Statistics licensed under the Open Government Licence v.3.0
+
