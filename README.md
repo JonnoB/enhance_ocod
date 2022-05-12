@@ -20,7 +20,7 @@ This repo contains the code needed to create the enchanced OCOD dataset. The sim
 - navigate to repo folder
 - navigate to empty_homes_data
 - download required opensource data and rename files/folder (see below)
-- download spaCy model
+- download spaCy model from xxx xxxx and put in empty_homes_data directory of the repo
 
 ## Docker version
 
