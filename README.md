@@ -12,7 +12,7 @@ The code in this repo has been used for the academic paper Offshore property in 
 The compressed dataset from the time the paper was writted is included with this repo as 'OCOD_classes.tar.xz'. However, it will become out of date and so it is reccomended to rebuild the dataset with current information. The following section describes how to generate the enhanced OCOD dataset.
 
 # How to create the Enhanced OCOD dataset
-This repo contains the code needed to create the enchanced OCOD dataset. The simplest way is to build and run the Docker image found [here](dockerfile). Otherwise the script full_ocod_parse_process.py can be run from a python environment.
+This repo contains the code needed to create the enchanced OCOD dataset. The simplest way is to build and run the Docker image found [here](dockerfile). Otherwise the script [full_ocod_parse_process.py] can be run from a python environment.
 
 ## Project set-up
 
@@ -36,7 +36,7 @@ in the command line type the following from the repo root folder
 
 - pip install spacy numpy pandas #installs the required libraries
 - python -m spacy download en_core_web_lg #the spaCy model uses the large vector language model optimized for CPU
-- python ~/full_ocod_parse_process.py ~/empty_homes_data/
+- python full_ocod_parse_process.py ./empty_homes_data/
 
 The script itself is [full_ocod_parse_process.py](full_ocod_parse_process.py)
 
@@ -73,9 +73,9 @@ In order to re-create or update the Enhanced OCOD dataset several opensource dat
 
 The markdown and notebooks used in this paper are as follows.
 
-1. [Unit tag and span cleaning](Unit tag and span cleaning.ipynb)
-2. [expanding tagged addresses](expanding tagged addresses.ipynb)
-3. [Locating and classifying the ocod dataset](Locating and classifying the ocod dataset.ipynb)
+1. [Unit tag and span cleaning](unit_tag_and_span_cleaning.ipynb)
+2. [expanding tagged addresses](expanding_tagged_addresses.ipynb)
+3. [Locating and classifying the ocod dataset](locating_and_classifying_the_ocod_dataset.ipynb)
 4. [London empty homes](London_empty_homes.Rmd)
 
 In order to run these scripts you must download several opensource datasets produced by the UK government.

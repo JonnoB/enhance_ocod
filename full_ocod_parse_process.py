@@ -1,5 +1,5 @@
 from address_parsing_helper_functions import *
-from locate_and_classify_helper_functions import *
+
 import sys
 
 """
@@ -18,8 +18,8 @@ root_path = str(args[1])
 
 ocod_data = load_and_prep_OCOD_data(root_path + 'OCOD_FULL_2022_02.csv')
 
-all_entities = spacy_pred_fn(spacy_model_path = root_path+'spacy_data/cpu/model-best', ocod_data = ocod_data)
-
+#all_entities = spacy_pred_fn(spacy_model_path = root_path+'spacy_data/cpu2/model-best', ocod_data = ocod_data)
+all_entities = load_cleaned_labels('./empty_homes_data/full_dataset_no_overlaps.json')
 full_expanded_data = parsing_and_expansion_process(all_entities, expand_addresses = True)
 
 del all_entities #memory management
@@ -28,6 +28,8 @@ ocod_data = post_process_expanded_data(full_expanded_data, ocod_data)
 
 del full_expanded_data #memory management
 
+
+from locate_and_classify_helper_functions import *
 print("Load ONSPD")
 postcode_district_lookup = load_postocde_district_lookup(root_path + "ONSPD_NOV_2021_UK.zip", "Data/ONSPD_NOV_2021_UK.csv")
 

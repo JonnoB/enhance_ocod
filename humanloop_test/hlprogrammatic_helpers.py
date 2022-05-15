@@ -23,9 +23,9 @@ city_regex = r"(london|birmingham|manchester|liverpool|leeds|sheffield|brighton|
 
 building_regex = r"\b(school|church|workshops|court|house|inn|tavern|hotel|cinema(s)?|office|centre|center|building(s)?|bungalow|[a-z]*works|farm|cottage|lodge|home|point|arcade(s)?|institute|hall|mansions|country club|apartments( east| south| west| north)?|(tower(s)?)(\s\w+)?)"
 
-xx_to_yy_regex = r"((\d+)(\s?(to|-)\s?)(\d+)\b)"
+xx_to_yy_regex = r"((\d+)[a-z]?(\s?(to|-|/)\s?)(\d+)[a-z]?\b)"
 
-building_special = r"(the knightsbridge(?=,)|chichester rents|belgravia gate|the chilterns|the Belvedere|(one hyde park)(?=,)|park plaza westminster bridge|"+multi_word_no_land+"exchange)"
+building_special = r"(the knightsbridge(?=,)|lake shore(?=,)|chichester rents|20:20 house|the forge|(?<=\s)x1 [a-z\s]+(?=,)|the cube|belgravia gate|the chilterns|the Belvedere|(one hyde park)(?=,)|park plaza westminster bridge|"+multi_word_no_land+"exchange)"
 
 other_classes_regex = r"(airspace|unit|plot|store|storage|storage pod|\broom|suite|studio)"
 businesses_regex = r"((cinema)|(hotel)|(office)|(pub)|(business)|(cafe)|(restaurant)|(unit)|(store))"

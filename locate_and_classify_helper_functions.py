@@ -1,7 +1,6 @@
 
 #the functions used by the empty homes project python notebooks
 import io
-import json
 import os
 import re
 import time
@@ -32,7 +31,7 @@ def filter_contiguous_numbers(number_list, number_filter):
     return out
 #the loop iks quite fast considering the rest of the process so I am not sure printing is necessary anymore
 #However, I want to keep it just in case so set the default to a very large numebr.
-def expand_dataframe_numbers(df2, column_name, print_every = 1000000, min_count = 1):
+def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1):
     #cycles through the dataframe and and expands xx-to-yy formats printing every ith iteration
     temp_list = []
     expand_time = 0
@@ -67,14 +66,17 @@ def expand_dataframe_numbers(df2, column_name, print_every = 1000000, min_count 
         filter_time =filter_time + (end_filter_time - end_expand_time)
         make_dataframe_time = make_dataframe_time +(end_make_dataframe_time - end_filter_time)
         
-        if (i%print_every==0) & (i>0): print("i=", i, " expand time,"+ str(round(expand_time, 3)) +
+        if (i>0) & (i%print_every==0): print("i=", i, " expand time,"+ str(round(expand_time, 3)) +
                            " filter time" + str(round(filter_time,3)) + 
                            " make_dataframe_time " + str(round(make_dataframe_time,3)))
     
     #once all the lines have been expanded concatenate them into a single dataframe
-    start_concat_time = time.time()
+    
     out = pd.concat(temp_list)
-    end_concat_time = time.time
+    #The data type coming into the function is a string as it is in the form xx-yy
+    #It needs to return a string as well otherwise there will be a pandas columns of mixed types
+    #ehich causes problems later on
+    out.loc[:, column_name] = out.loc[:, column_name].astype(str)
 
     return out
 
@@ -110,6 +112,8 @@ def preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup):
     ocod_data = ocod_data.merge(postcode_district_lookup, 'left', left_on = "postcode2", right_on = "postcode2")
 
     ocod_data['street_name'] = ocod_data['street_name'].str.replace(r"^ +| +$", r"", regex=True)
+    #this is to ensure that the street number includes only digits as it is used in the LSOA matching where the only thing
+    #that matters is the street number not whether it is a or b or whatever.
     ocod_data['street_number2'] = ocod_data['street_number'].str.replace(r"^.*(?=\b[0-9]+$)", "", regex = True).str.replace(r"[^\d]", "", regex = True)
 
     #This stripped out versionof street name is used several times throughout the notebook
@@ -733,7 +737,7 @@ def voa_address_match_all_data(ocod_data, voa_businesses, print_lads = False, pr
     for target_lad in all_lads:
         if print_lads: print(target_lad)
             
-        if i%print_every==0: print("address matched ", i, "lads of "+ str(round(len(all_lads), 3)))
+        if (i>0) & (i%print_every==0): print("address matched ", i, "lads of "+ str(round(len(all_lads), 3)))
         i = i+1
         #temp['matches_business_address'] = business_address_matcher(temp['street_name'], temp['street_number'], voa_businesses, target_lad)
         matched_lads_list = matched_lads_list + [massaged_address_match(ocod_data, voa_businesses, target_lad)]

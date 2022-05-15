@@ -4,6 +4,11 @@ import re
 import numpy as np
 import time
 import spacy
+#These are to modify the tokenization process
+from spacy.lang.char_classes import LIST_ELLIPSES
+from spacy.lang.char_classes import LIST_ICONS, HYPHENS
+from spacy.lang.char_classes import CONCAT_QUOTES, ALPHA_LOWER, ALPHA_UPPER, ALPHA
+from spacy.util import compile_infix_regex
 
 
 #This  module is supposed to contain all the relevant functions for parsing the LabeledS json file 
@@ -242,14 +247,17 @@ def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1
         filter_time =filter_time + (end_filter_time - end_expand_time)
         make_dataframe_time = make_dataframe_time +(end_make_dataframe_time - end_filter_time)
         
-        if i%print_every==0: print("i=", i, " expand time,"+ str(round(expand_time, 3)) +
+        if (i>0) & (i%print_every==0): print("i=", i, " expand time,"+ str(round(expand_time, 3)) +
                            " filter time" + str(round(filter_time,3)) + 
                            " make_dataframe_time " + str(round(make_dataframe_time,3)))
     
     #once all the lines have been expanded concatenate them into a single dataframe
-    start_concat_time = time.time()
+    
     out = pd.concat(temp_list)
-    end_concat_time = time.time
+    #The data type coming into the function is a string as it is in the form xx-yy
+    #It needs to return a string as well otherwise there will be a pandas columns of mixed types
+    #ehich causes problems later on
+    out.loc[:, column_name] = out.loc[:, column_name].astype(str)
 
     return out
 
@@ -397,7 +405,7 @@ def final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_m
     This is because other address parsers are not designed to perform such and expansion
     and so would make such a comparison unfair.
     """
-    xx_to_yy_regex = r'^\d+\s?(?:-|to)\s?\d+$'
+    xx_to_yy_regex = r'^\d+\s?(?:-|to|\/)\s?\d+$'
 
     expanded_street = df[df.datapoint_id.isin(multi_property) & df.street_number.str.contains(xx_to_yy_regex)].reset_index()
     expanded_unit_id = df[df.datapoint_id.isin(multi_unit_id) & df.unit_id.str.contains(xx_to_yy_regex)].reset_index()
@@ -431,7 +439,8 @@ def final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_m
            expanded_street_simple, 
            expanded_unit_id_simple, 
            df2 ])
-    
+
+   
     return full_expanded_data
 
 def parsing_and_expansion_process(all_entities, expand_addresses = False ):
@@ -442,7 +451,7 @@ def parsing_and_expansion_process(all_entities, expand_addresses = False ):
     It also takes a logical depending on whether expanding the addresses is desired or not
     """
     #This regex is used in several places and is kept here as it was originally used in the function below.
-    xx_to_yy_regex = r'^\d+\s?(?:-|to)\s?\d+$'
+    #xx_to_yy_regex = r'^\d+\s?(?:-|to)\s?\d+$'
     multi_unit_id, multi_property, all_multi_ids = identify_multi_addresses(all_entities)
     df = spread_address_labels(all_entities, all_multi_ids)
 
@@ -522,6 +531,24 @@ def spacy_pred_fn(spacy_model_path, ocod_data):
     """
     print('Loading the spaCy model')
     nlp1 = spacy.load(spacy_model_path) 
+    #Tokenization needs to be customised to take account of the foibles of the data. I have added a couple of additional splitting criteria
+    infixes = (
+    LIST_ELLIPSES
+    + LIST_ICONS
+    + [
+        r"(?<=[0-9])[+\-\,*^\(\)](?=[0-9-])",
+        r"(?<=[{al}{q}])\.(?=[{au}{q}])".format(
+            al=ALPHA_LOWER, au=ALPHA_UPPER, q=CONCAT_QUOTES
+        ),
+        r"(?<=[{a}]),(?=[{a}])".format(a=ALPHA),
+        r"(?<=[{a}])(?:{h})(?=[{a}])".format(a=ALPHA, h=HYPHENS),
+        r"(?<=[{a}0-9])[:<>=/\(\)](?=[{a}])".format(a=ALPHA),
+        r"(?<=[{a}])[:<>=/\(\)](?=[{a}0-9])".format(a=ALPHA), #I added this one in to try and break things like "(odd)33-45"
+    ]   
+    )
+
+    infix_re = compile_infix_regex(infixes)
+    nlp1.tokenizer.infix_finditer = infix_re.finditer
 
     print('Adding the datapoint id and title number meta data to the property address')
     ocod_context = [(ocod_data.loc[x,'property_address'], {'datapoint_id':x, 'title_number':str(ocod_data.title_number[x])}) for x in range(0,ocod_data.shape[0])]
@@ -552,5 +579,5 @@ def spacy_pred_fn(spacy_model_path, ocod_data):
     all_entities['label_text'] = [all_entities.text[x][all_entities.start[x]:all_entities.end[x]] for x in range(0,all_entities.shape[0])]
     
     all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label']).cumcount()
-    
+    print('Names Entity Recognition labelling complete')
     return all_entities

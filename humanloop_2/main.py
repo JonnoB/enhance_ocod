@@ -36,6 +36,9 @@ Labels is a simple list of strings
 labels = ['building_name', 'postcode', 'street_name', 'street_number', 'unit_id', 'unit_type', 'city', 'number_filter','last_do_not_use']
 
 
+ground_truths = pd.read_csv("/app/empty_homes_data/gt_dev_for_programmatic.csv")
+
+
 """ 
 ground_truths is another pd.DataFrame. It should have these columns:
 
@@ -52,7 +55,7 @@ def start(host=None, port=None, log_level="warning", debug=False):
         port=port,
         dataset=dataset,
         labels=labels,
-        #ground_truths=ground_truths,
+        ground_truths=ground_truths,
         log_level=log_level,
         debug=debug,
     )
