@@ -20,7 +20,7 @@ This repo contains the code needed to create the enchanced OCOD dataset. The sim
 - navigate to repo folder
 - navigate to empty_homes_data
 - download required opensource data and rename files/folder (see below)
-- download spaCy model from xxx xxxx and put in empty_homes_data directory of the repo
+- download spaCy model from [this dropbox folder](https://www.dropbox.com/sh/kom162tjwgo7c2h/AABW0ygE8gtJhgIKhFYtCvWha?dl=0) and extract in the empty_homes_data directory of the repo
 
 ## Docker version
 
@@ -62,12 +62,16 @@ In order to re-create or update the Enhanced OCOD dataset several opensource dat
 
 | Dataset                                                                                             | Change file/folder name to | Type   |
 |-----------------------------------------------------------------------------------------------------|----------------------------|--------|
-| [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )                     | OCOD.csv                   | CSV    |
-| [ONSPD](https://geoportal.statistics.gov.uk/search?q=onspd)                                         | ONSPD.csv                  | csv    |
-| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)* | price_paid_files           | Folder |
-| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)                   | VOA_ratings.csv            | CSV    |
+| [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )                     | OCOD.csv                   | csv    |
+| [ONSPD](https://geoportal.statistics.gov.uk/search?q=onspd)\*                                         | ONSPD.zip                  | zip    |
+| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)* | price_paid_files           | folder |
+| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*                  | VOA_ratings.csv            | csv    |
 
-*Note: The price paid dataset should be downloaded as yearly files and places inside a folder called 'price_paid_files'. It is advisable to download several years. The paper used 2017-2021. Having more years increases the chances of being able to fill in missing information in OCOD, however after a few years the benefits reduce and the memory costs become high.
+Note: 
+\* Only folder name of the ONSPD zip needs to be changed the data inside doesn't. The script searches for the correct file inside. 
+Future versions of the script may make it more flexible with regards file names.
+\*\* The price paid dataset should be downloaded as yearly files and places inside a folder called 'price_paid_files'. It is advisable to download several years. The paper used 2017-2021. Having more years increases the chances of being able to fill in missing information in OCOD, however after a few years the benefits reduce and the memory costs become high.
+\*\*\* There are several files in the dataset. The one with a simmilar too 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
 
 # Paper  Code
 
@@ -80,6 +84,10 @@ The markdown and notebooks used in this paper are as follows.
 
 In order to run these scripts you must download several opensource datasets produced by the UK government.
 Please see the paper's data section in the method for details.
+
+# Contributing
+
+This dataset pipeline is meant to be used, suggestions and helpful commits and improvements are welcomed.
 
 # Citing this dataset
 

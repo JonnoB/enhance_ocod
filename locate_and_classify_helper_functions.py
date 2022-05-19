@@ -152,7 +152,9 @@ def load_and_process_pricepaid_data(file_path, postcode_district_lookup):
 
     price_paid_df['postcode2'] = price_paid_df['postcode'].str.lower().str.replace(r"\s", r"", regex=True)
 
-    price_paid_df = price_paid_df.merge(postcode_district_lookup, 'left', left_on = "postcode2", right_on = "postcode2")
+    #Removing unneccessary columns to save memory
+    price_paid_df = price_paid_df.merge(postcode_district_lookup, 'left', left_on = "postcode2", right_on = "postcode2").loc[:,
+    ['street_name2', 'street_number','postcode2', 'district','paon', 'lad11cd', 'oa11cd', 'lsoa11cd', 'msoa11cd']]
     
     return price_paid_df
 

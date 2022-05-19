@@ -7,7 +7,6 @@ This script runs the full parsing pipeline.
 It takes a single argument which is the root path of the empty_homes_data path folder.
 It requires that all data is found in that folder.
 I hope to update the script so that it is easier to swap out the data for new data when it is created
-The script currently requires pre-labelled data. I hope to change that using a spacy model.
 
 """
 
@@ -16,10 +15,10 @@ args = sys.argv
 root_path = str(args[1])
 
 
-ocod_data = load_and_prep_OCOD_data(root_path + 'OCOD_FULL_2022_02.csv')
+ocod_data = load_and_prep_OCOD_data(root_path + 'OCOD.csv')
 
-#all_entities = spacy_pred_fn(spacy_model_path = root_path+'spacy_data/cpu2/model-best', ocod_data = ocod_data)
-all_entities = load_cleaned_labels('./empty_homes_data/full_dataset_no_overlaps.json')
+all_entities = spacy_pred_fn(spacy_model_path = root_path+'spacy_cpu_model', ocod_data = ocod_data)
+#all_entities = load_cleaned_labels(root_path + 'full_dataset_no_overlaps.json')
 full_expanded_data = parsing_and_expansion_process(all_entities, expand_addresses = True)
 
 del all_entities #memory management
@@ -31,16 +30,22 @@ del full_expanded_data #memory management
 
 from locate_and_classify_helper_functions import *
 print("Load ONSPD")
-postcode_district_lookup = load_postocde_district_lookup(root_path + "ONSPD_NOV_2021_UK.zip", "Data/ONSPD_NOV_2021_UK.csv")
+# zip file handler  
+zip = zipfile.ZipFile(root_path + 'ONSPD.zip')
+# looks in the data folder for a csv file that begins ONSPD
+#This will obviously break if the ONS change the archive structure
+target_zipped_file = [i for i in zip.namelist() if re.search(r'^Data\/ONSPD.+csv$',i) ][0]
+postcode_district_lookup = load_postocde_district_lookup(root_path + "ONSPD.zip", target_zipped_file)
 
 print("Pre-process expanded ocod data")
 ocod_data = preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup)
 print("Load and pre-process the Land Registry price paid dataset")
+#loads from a folder of price paid files
 price_paid_df = load_and_process_pricepaid_data(root_path+'price_paid_files/', postcode_district_lookup)
 print("Add in missing Local authority codes to the ocoda dataset")
 ocod_data = add_missing_lads_ocod(ocod_data, price_paid_df)
 print("Load and pre-process the voa business ratings list dataset")
-voa_businesses = load_voa_ratinglist(root_path +'uk-englandwales-ndr-2017-listentries-compiled-epoch-0029-baseline-csv.csv', postcode_district_lookup)
+voa_businesses = load_voa_ratinglist(root_path +'VOA_ratings.csv', postcode_district_lookup)
 
 del postcode_district_lookup #for memory purposes
 
@@ -70,6 +75,11 @@ ocod_data = contract_ocod_after_classification(ocod_data, class_type = 'class2',
 
 print('Process complete saving the enchanced ocod dataset to ' + root_path + 'enhanced_ocod_dataset.csv')
 
-ocod_data.to_csv(root_path+'enhanced_ocod_dataset.csv')
+#subset the dataframe to only the columns necessary for the dataset and save
+ocod_data.loc[:, ['title_number', 'within_title_id', 'within_larger_title', 'unique_id', 'unit_id', 'unit_type',
+       'building_name', 'street_number', 'street_name', 'postcode', 'city',
+       'district',  'region', 'property_address', 'oa11cd', 'lsoa11cd',
+       'msoa11cd',  'lad11cd', 'class', 'class2']].rename(columns={'within_title_id':'nested_id',
+                                                                  'within_larger_title':'nested_title'}).to_csv(root_path+'enhanced_ocod_dataset.csv')
 
 #FINISH!

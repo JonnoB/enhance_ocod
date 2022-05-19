@@ -804,6 +804,11 @@ has_price_df <- offshore_df_price %>%
          !is.na(unit_type))
 
 mean(has_price_df$price_paid)
+
+offshore_df_price <- read_csv(file.path(basewd, "enhanced_ocod_dataset.csv")) 
+
+
+table(offshore_df_price$class2)
 ```
 
 
