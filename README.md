@@ -36,7 +36,7 @@ in the command line type the following from the repo root folder
 
 - pip install spacy numpy pandas #installs the required libraries
 - python -m spacy download en_core_web_lg #the spaCy model uses the large vector language model optimized for CPU
-- python full_ocod_parse_process.py ./empty_homes_data/
+- python ./full_ocod_parse_process.py ./empty_homes_data/
 
 The script itself is [full_ocod_parse_process.py](full_ocod_parse_process.py)
 
@@ -89,7 +89,8 @@ XXXX
 
 # OGL notices
 
-- Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
+- Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0. (Price Paid)
+- Information produced by HM Land Registry. © Crown copyright (OCOD)
 - Contains OS data © Crown copyright and database right 2022
 - Contains Royal Mail data © Royal Mail copyright and database right 2022
 - Source: Office for National Statistics licensed under the Open Government Licence v.3.0

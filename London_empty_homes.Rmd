@@ -26,7 +26,7 @@ if(length(new.packages)) install.packages(new.packages)
 
 lapply(packages, library, character.only = TRUE)
 
-basewd <- "/home/jonno/empty_homes_data"
+basewd <- "/home/jonno/empty_homes_london/empty_homes_data"
 basecd <- "/home/jonno/empty_homes_london"
 
 list.files(file.path(basecd, "functions"), full.names = T) %>%
@@ -121,12 +121,12 @@ The last script to process this data before it's final state was "Analysing the 
 
 ```{r}
 #This file is the output of the Analysing OCOD ipynb
-offshore_df <- read_csv(file.path(basewd, "ocod_lsoa.csv")) %>%
-  select(-1) %>%
-  rename(offshore = '0') %>%
+offshore_df <- read_csv(file.path(basewd, "enhanced_ocod_dataset.csv")) %>%
+  filter(region =="GREATER LONDON",
+         class2 =="domestic") %>%
   rename(LSOA11CD = lsoa11cd) %>%
-  filter(class2 == "domestic") %>%
-  select(LSOA11CD, offshore)
+  group_by(LSOA11CD) %>%
+  summarise(offshore = n())
 
 
 ```
@@ -498,20 +498,29 @@ This chunk creates a table for the metrics to be easily compared.
 #taken from 
 #https://stackoverflow.com/questions/39670918/replace-characters-in-column-names-gsub
 colClean <- function(x){ colnames(x) <- gsub("_", " ", colnames(x)); x } 
-
-
-mean_total_value %>% ungroup %>%
+{
+metrics_table <- mean_total_value %>% ungroup %>%
   group_by(name) %>%
   summarise(across(.cols = c(-id), .fns =mean)) %>%
   rename(type = name) %>%
   filter(type != "unconventional_overlapped") %>%
-  mutate(type = ifelse(type=="total", "homes", type) #changes total to type to match the names from the other metrics
+  mutate(type = ifelse(type=="total", "homes", type), #changes total to type to match the names from the other metrics
          ) %>%
   left_join(entropy_df) %>% left_join(morans_df %>% select(-p_value), by = c("type"="name") ) %>%
-  mutate(total_value = total_value/1e9) %>% 
-  colClean(.) #%>% #remove the underscore for nicer tables
-  xtable(., caption = "The complete metrics list for the analysis of the main property types",
+  mutate(total_value = (round(total_value/1e9, 1)),
+         mean_value = round(mean_value/1e6,2),
+         morans_I = round(morans_I, 2),
+         type = ifelse(type=="unconventional", "UDP", type),
+         counts = as.integer(round(counts/1000))
+         )  %>% 
+  colClean(.) #remove the underscore for nicer tables
+
+names(metrics_table) <- paste0(names(metrics_table), c(""," (£B)", " (K)", " (£M)", "", ""))
+metrics_table
+  xtable(metrics_table, caption = "The complete metrics list for the analysis of the main property types",
          label = "tab:metrics_table")
+  
+  }
 ```
 
 
@@ -745,29 +754,57 @@ mean_total_value_nested <- all_vars_monte_nested_df %>%
   left_join(all_variables_lad %>% ungroup %>%
   rename(total = homes) %>%
   pivot_longer(cols = c(low_use, offshore, airbnb, total, unconventional, unconventional_overlapped), values_to = "counts")
-) %>%
-  mutate(total_value = counts *value)  %>%
-  group_by(id, name) %>%
-  summarise(total_value = sum(total_value),
-            counts = sum(counts)) %>%
-  mutate(mean_value = total_value/counts)
+) %>% select(-LAD11CD, -LAD11NM)
 
-mean_total_value_nested  %>% ungroup %>%
+
+{
+metrics_table_nested <- mean_total_value_nested  %>% ungroup %>%
   group_by(name) %>%
   summarise(across(.cols = c(-id), .fns =mean)) %>%
   rename(type = name) %>%
   left_join(entropy_nested) %>% left_join(morans_df_nested %>% select(-p_value), by = c("type"="name") ) %>%
-  mutate(total_value = total_value/1e9) %>% 
-    mutate(type = ifelse(type=="normal", "single", type)) %>%
-  colClean(.) %>% #remove the underscore for nicer tables
-  xtable(., caption = "The complete metrics list comparing nested and single offshore homes",
+  mutate(total_value = (round(total_value/1e9, 1)),
+         mean_value = round(mean_value/1e6,2),
+         morans_I = round(morans_I, 2),
+         type = ifelse(type=="unconventional", "UDP", type),
+         counts = as.integer(round(counts/1000))
+         )  %>% 
+    select(type, total_value, counts, mean_value, bits, morans_I) %>%
+  colClean(.) #remove the underscore for nicer tables
+  
+names(metrics_table_nested) <- paste0(names(metrics_table_nested), c(""," (£B)", " (K)", " (£M)", "", ""))
+metrics_table_nested
+  xtable(metrics_table_nested, caption = "The complete metrics list comparing nested and single offshore homes",
          label = "tab:metrics_table_nested")
+  
+  }
 
 ```
 
 ##nested conclusion
 
 The nested addresses are substantially cheaper and more concentrated than the normal offshore properties. They also have almost no spatial auto-corellation whilst the normal offshore has high spatial auto corellation. This points to the different natures of the property types. Nested properties represent portfolios within or consisting of a housing development whilst, the onormal offshore property is not and more likely to be owned by an individual.
+
+
+# sampling from the known offshore prices
+
+```{r}
+offshore_df_price <- read_csv(file.path(basewd, "enhanced_ocod_dataset.csv")) %>%
+  filter(region =="GREATER LONDON",
+         class2 =="domestic",
+         within_larger_title == FALSE) %>%
+  select(title_number, tenure, tenure:district, price_paid, property_address)
+
+#how many have a price?
+#just over half
+table(is.na(offshore_df_price$price_paid))/nrow(offshore_df_price)
+
+has_price_df <- offshore_df_price %>%
+  filter(!is.na(price_paid),
+         !is.na(unit_type))
+
+mean(has_price_df$price_paid)
+```
 
 
 #Future work
