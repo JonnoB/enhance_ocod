@@ -21,4 +21,4 @@ ENTRYPOINT [ "python" ]
 
 EXPOSE 8888
 
-#docker run --rm -it -v $(pwd):/app jonno/parse_process:test ./app/empty_homes_london/full_ocod_parse_process.py ./app/empty_homes_data/
+#docker run --rm -it -v $(pwd):/app jonno/parse_process:test ./app/enhance_ocod/full_ocod_parse_process.py ./app/data/
