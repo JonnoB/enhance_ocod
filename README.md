@@ -12,7 +12,7 @@ The code in this repo has been used for the academic paper Offshore property in 
 The compressed dataset from the time the paper was writted is included with this repo as 'OCOD_classes.tar.xz'. However, it will become out of date and so it is reccomended to rebuild the dataset with current information. The following section describes how to generate the enhanced OCOD dataset.
 
 # How to create the Enhanced OCOD dataset
-This repo contains the code needed to create the enchanced OCOD dataset. The simplest way is to build and run the Docker image found [here](dockerfile). Otherwise the script [full_ocod_parse_process.py] can be run from a python environment.
+This repo contains the code needed to create the enchanced OCOD dataset. The simplest way is to build and run the Docker image found [here](dockerfile). Otherwise the script [full_ocod_parse_process.py] can be run from a python environment. The process is quite memory intense using a machine with 16Gb is advisable.
 
 ## Project set-up
 
@@ -34,9 +34,9 @@ See the docker readme for detailed instructions
 
 in the command line type the following from the repo root folder
 
-- pip install spacy numpy pandas #installs the required libraries
-- python -m spacy download en_core_web_lg #the spaCy model uses the large vector language model optimized for CPU
-- python ./full_ocod_parse_process.py ./empty_homes_data/
+- `pip install spacy numpy pandas` #installs the required libraries
+- `python -m spacy download en_core_web_lg` #the spaCy model uses the large vector language model optimized for CPU
+- `python ./full_ocod_parse_process.py ./empty_homes_data/`
 
 The script itself is [full_ocod_parse_process.py](full_ocod_parse_process.py)
 
@@ -64,13 +64,15 @@ In order to re-create or update the Enhanced OCOD dataset several opensource dat
 |-----------------------------------------------------------------------------------------------------|----------------------------|--------|
 | [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )                     | OCOD.csv                   | csv    |
 | [ONSPD](https://geoportal.statistics.gov.uk/search?q=onspd)\*                                         | ONSPD.zip                  | zip    |
-| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)* | price_paid_files           | folder |
-| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*                  | VOA_ratings.csv            | csv    |
+| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\* | price_paid_files           | folder |
+| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*                  | VOA_ratings.csv            | csv    |
 
 Note: 
 \* Only folder name of the ONSPD zip needs to be changed the data inside doesn't. The script searches for the correct file inside. 
 Future versions of the script may make it more flexible with regards file names.
+
 \*\* The price paid dataset should be downloaded as yearly files and places inside a folder called 'price_paid_files'. It is advisable to download several years. The paper used 2017-2021. Having more years increases the chances of being able to fill in missing information in OCOD, however after a few years the benefits reduce and the memory costs become high.
+
 \*\*\* There are several files in the dataset. The one with a simmilar too 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
 
 # Paper  Code
