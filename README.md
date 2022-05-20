@@ -2,10 +2,11 @@
 
 # The Enhanced OCOD dataset
 
-This repo provides the code necessary to create the enhanced OCOD dataset. The Enhanced OCOD dataset is based on the The paper cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This dataset contains the addresses and additional metadata, UK property owned by offshore companies.
-produced by the land Registry. The OCOD dataset is a record of all UK property owned by and offshore company. The enhanced OCOD dataset, tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, Domestic, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
+This repo provides the pipeline to create the enhanced OCOD dataset. The Enhanced OCOD dataset is based on the The paper cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Domestic, Business, etc).
 
-The code in this repo has been used for the academic paper Offshore property in London where is it and what is?
+The enhanced OCOD dataset, attempt to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, Domestic, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
+
+The enhanced OCOD dataset was demonstrated in the paper `Inspecting the laundromat: Mapping and characterising offshore owned domestic property in London`
 
 # The Dataset
 
@@ -22,7 +23,7 @@ This repo contains the code needed to create the enchanced OCOD dataset. The sim
 - download required opensource data and rename files/folder (see below)
 - download spaCy model from [this dropbox folder](https://www.dropbox.com/sh/kom162tjwgo7c2h/AABW0ygE8gtJhgIKhFYtCvWha?dl=0) and extract in the empty_homes_data directory of the repo
 
-## Docker version
+## Docker process
 
 See the docker readme for detailed instructions
 
@@ -30,7 +31,7 @@ See the docker readme for detailed instructions
 - build docker
 - run docker
 
-## Python version
+## Python process
 
 in the command line type the following from the repo root folder
 
@@ -75,14 +76,13 @@ Future versions of the script may make it more flexible with regards file names.
 
 \*\*\* There are several files in the dataset. The one with a simmilar too 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
 
-# Paper  Code
+# Additional code
 
-The markdown and notebooks used in this paper are as follows.
+Several notebooks are used in this repo. These notebooks were used to develop the final script. The notebooks used in this paper are as follows.
 
 1. [Unit tag and span cleaning](unit_tag_and_span_cleaning.ipynb)
 2. [expanding tagged addresses](expanding_tagged_addresses.ipynb)
 3. [Locating and classifying the ocod dataset](locating_and_classifying_the_ocod_dataset.ipynb)
-4. [London empty homes](London_empty_homes.Rmd)
 
 In order to run these scripts you must download several opensource datasets produced by the UK government.
 Please see the paper's data section in the method for details.
