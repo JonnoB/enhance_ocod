@@ -8,9 +8,10 @@ The enhanced OCOD dataset, attempt to resolve these issues. The pipeline tidies 
 
 The enhanced OCOD dataset was demonstrated in the paper 'Inspecting the laundromat: Mapping and characterising offshore owned domestic property in London'
 
+
 # The Dataset
 
-The compressed dataset from the time the paper was writted is included with this repo as 'OCOD_classes.tar.xz'. However, it will become out of date and so it is reccomended to rebuild the dataset with current information. The following section describes how to generate the enhanced OCOD dataset.
+The compressed dataset from the time the paper was written is included with this repo as 'OCOD_classes.tar.xz'. However, it will become out of date and so it is reccomended to rebuild the dataset with current information. The following section describes how to generate the enhanced OCOD dataset.
 
 # How to create the Enhanced OCOD dataset
 This repo contains the code needed to create the enchanced OCOD dataset. The simplest way is to build and run the Docker image found [here](dockerfile). Otherwise the script [full_ocod_parse_process.py] can be run from a python environment. The process is quite memory intense using a machine with 16Gb is advisable.

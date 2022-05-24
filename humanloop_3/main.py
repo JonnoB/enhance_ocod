@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 Dataset is a pd.DataFrame. The only mandatory column is `text`, 
 which should have a `string` dtype. The rest is up to you. 
 """
-dataset = pd.read_csv('/app/empty_homes_data/property_address_only.csv')
+dataset = pd.read_csv('/app/enhance_ocod/data/property_address_only.csv')
 
 
 
@@ -36,7 +36,7 @@ Labels is a simple list of strings
 labels = ['building_name', 'postcode', 'street_name', 'street_number', 'unit_id', 'unit_type', 'city', 'number_filter','last_do_not_use']
 
 
-ground_truths = pd.read_csv("/app/empty_homes_data/gt_dev_for_programmatic.csv")
+ground_truths = pd.read_csv("/app/enhance_ocod/data/gt_dev_for_programmatic.csv")
 
 
 """ 
@@ -59,3 +59,6 @@ def start(host=None, port=None, log_level="warning", debug=False):
         log_level=log_level,
         debug=debug,
     )
+    
+#docker run --rm -p 8889:8889 -it -v $(pwd):/app jonno/humanloop:latest run /app/enhance_ocod/humanloop_2 --port=8889 --host=0.0.0.0
+
