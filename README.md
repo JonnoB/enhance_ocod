@@ -1,5 +1,3 @@
-# This project is currently underdevelopment
-
 # The Enhanced OCOD dataset
 
 This repo provides the pipeline to create the enhanced OCOD dataset. The Enhanced OCOD dataset is based on the The paper cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Domestic, Business, etc).
