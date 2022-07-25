@@ -94,7 +94,7 @@ This dataset pipeline is meant to be used, suggestions and helpful commits and i
 
 If you use this dataset please cite
 
-XXXX
+What's in the laundromat? Mapping and characterising offshore owned domestic property in London	 [arXiv:2207.10931](https://arxiv.org/abs/2207.10931)
 
 # OGL notices
 
