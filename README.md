@@ -4,7 +4,7 @@ This repo provides the pipeline to create the enhanced OCOD dataset. The Enhance
 
 The enhanced OCOD dataset, attempt to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, Domestic, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
 
-The enhanced OCOD dataset was demonstrated in the paper 'Inspecting the laundromat: Mapping and characterising offshore owned domestic property in London'
+The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundromat: Mapping and characterising offshore owned domestic property in London'](https://arxiv.org/abs/2207.10931). The code for the analysis in the paper can be found [here](https://github.com/JonnoB/inspecting_the_laundromat).
 
 
 # The Dataset
