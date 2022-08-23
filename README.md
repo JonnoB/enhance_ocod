@@ -1,12 +1,10 @@
-# This project is currently underdevelopment
-
 # The Enhanced OCOD dataset
 
 This repo provides the pipeline to create the enhanced OCOD dataset. The Enhanced OCOD dataset is based on the The paper cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Domestic, Business, etc).
 
 The enhanced OCOD dataset, attempt to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, Domestic, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
 
-The enhanced OCOD dataset was demonstrated in the paper 'Inspecting the laundromat: Mapping and characterising offshore owned domestic property in London'
+The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundromat: Mapping and characterising offshore owned domestic property in London'](https://arxiv.org/abs/2207.10931). The code for the analysis in the paper can be found [here](https://github.com/JonnoB/inspecting_the_laundromat).
 
 
 # The Dataset
@@ -94,9 +92,9 @@ This dataset pipeline is meant to be used, suggestions and helpful commits and i
 
 # Citing this dataset
 
-If you use this dataset please cite
+If you use this dataset please cite the pre-print found at
 
-XXXX
+What's in the laundromat? Mapping and characterising offshore owned domestic property in London	 [arXiv:2207.10931](https://arxiv.org/abs/2207.10931)
 
 # OGL notices
 
