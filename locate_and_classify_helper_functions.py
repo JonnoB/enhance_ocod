@@ -676,9 +676,15 @@ def substreet_matching(ocod_data, price_paid_df, voa_businesses, print_lads = Fa
                                                 in range(0, len(missing_lsoa_road))]
                 filled_lsoa_list = filled_lsoa_list + [missing_lsoa_road]
     
-
-    #join the list back together
-    temp_lsoa = pd.concat(filled_lsoa_list)
+    #if the temp_lso is returned as empty then
+    #then pd.concat crashes. to avoid this the following if statement is used
+    #the if statment checks if the list is empty
+    if not filled_lsoa_list:
+        #join the list back together
+        temp_lsoa = ocod_data[0:0]
+    else:
+        temp_lsoa = pd.concat(filled_lsoa_list)
+  
 
     #join the ocod dataset backtogether
     ocod_data = pd.concat([ocod_data[~ocod_data['unique_id'].isin(temp_lsoa['unique_id'])], temp_lsoa ] )

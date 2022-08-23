@@ -26,7 +26,7 @@ This repo contains the code needed to create the enchanced OCOD dataset. The sim
 
 ## Docker process
 
-See the docker readme for detailed instructions
+See the [docker readme](dockerfile) for detailed instructions
 
 - install docker
 - build docker
