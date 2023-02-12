@@ -779,7 +779,7 @@ def classification_type1(ocod_data):
             'land',
             'carpark',
             'airspace',
-            'domestic',
+            'residential',
             'business',
             'business',
             'land',
@@ -810,8 +810,8 @@ def classification_type2(ocod_data):
     
     ocod_data['class2'] = np.select(
         [   (ocod_data['class']=='unknown') & ((ocod_data.property_address.str.contains('^(?:the )?unit') & ocod_data.property_address.str.contains('park', regex = True))==True), #contains the word unit and park
-            (ocod_data['class']=='unknown') & (ocod_data['business_counts']==0), #if there are no businesses in the oa then it is a domestic
-            (ocod_data['class']=='unknown') & (ocod_data['lsoa_business_counts']==0), #if there are no businesses in the lsoa then it is a domestic
+            (ocod_data['class']=='unknown') & (ocod_data['business_counts']==0), #if there are no businesses in the oa then it is a residential
+            (ocod_data['class']=='unknown') & (ocod_data['lsoa_business_counts']==0), #if there are no businesses in the lsoa then it is a residential
             (ocod_data['class']=='unknown') & (ocod_data['street_match']==True) & (ocod_data['street_name'].notnull()==True) & (ocod_data['street_number'].notnull()==True),
             (ocod_data['class']=='unknown') & (ocod_data['street_match']==False) & (ocod_data['street_name'].notnull()==True),
             (ocod_data['class']=='unknown') & (ocod_data['building_name'].notnull()==True)
@@ -819,11 +819,11 @@ def classification_type2(ocod_data):
         ], 
         [
             'business',
-            'domestic',
-            'domestic',
-            'domestic',
-            'domestic',
-            'domestic'
+            'residential',
+            'residential',
+            'residential',
+            'residential',
+            'residential'
         ], 
         default= ocod_data['class']
     )
@@ -844,10 +844,10 @@ def classification_type2(ocod_data):
 
     return ocod_data
 
-def contract_ocod_after_classification(ocod_data, class_type = 'class2', classes = ['domestic'] ):
+def contract_ocod_after_classification(ocod_data, class_type = 'class2', classes = ['residential'] ):
     
     """
-    This function removes mutli-addresses where they are not necessary. This is becuase only domestic properties should be classed as 
+    This function removes mutli-addresses where they are not necessary. This is becuase only residential properties should be classed as 
     multiples. However, in some cases including unknown's may be of interest.
     
     The function takes as inputs
@@ -860,8 +860,8 @@ def contract_ocod_after_classification(ocod_data, class_type = 'class2', classes
 
     ocod_data = pd.concat([ocod_data[ocod_data[class_type].isin(classes)], temp.drop_duplicates(subset ='title_number')]).sort_values(by = "unique_id")
 
-    #when the unit type is a carparking space but the class is domestic it means that the address is a domestic property that explicitly mentions a car park
-    ocod_data = ocod_data[~(ocod_data['unit_type'].str.contains(r"park|garage") & (ocod_data['class']=="domestic"))]
+    #when the unit type is a carparking space but the class is residential it means that the address is a residential property that explicitly mentions a car park
+    ocod_data = ocod_data[~(ocod_data['unit_type'].str.contains(r"park|garage") & (ocod_data['class']=="residential"))]
 
     
     return ocod_data

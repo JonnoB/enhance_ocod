@@ -1,10 +1,10 @@
 # The Enhanced OCOD dataset
 
-This repo provides the pipeline to create the enhanced OCOD dataset. The Enhanced OCOD dataset is based on the The paper cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Domestic, Business, etc).
+This repo provides the pipeline to create the enhanced OCOD dataset. The Enhanced OCOD dataset is based on the The paper cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Residential, Business, etc).
 
-The enhanced OCOD dataset, attempt to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, Domestic, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
+The enhanced OCOD dataset, attempt to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, residential, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
 
-The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundromat: Mapping and characterising offshore owned domestic property in London'](https://arxiv.org/abs/2207.10931). The code for the analysis in the paper can be found [here](https://github.com/JonnoB/inspecting_the_laundromat).
+The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundromat: Mapping and characterising offshore owned residential property in London'](https://doi.org/10.1177/2399808323115548). The code for the analysis in the paper can be found [here](https://github.com/JonnoB/inspecting_the_laundromat).
 
 
 # The Dataset
@@ -20,7 +20,7 @@ This repo contains the code needed to create the enchanced OCOD dataset. The sim
 - navigate to repo folder
 - navigate to empty_homes_data
 - download required opensource data and rename files/folder (see below)
-- download spaCy model from [this dropbox folder](https://www.dropbox.com/sh/kom162tjwgo7c2h/AABW0ygE8gtJhgIKhFYtCvWha?dl=0) and extract in the empty_homes_data directory of the repo
+- download spaCy model from [this OSF data repository](https://osf.io/khavm/) and extract in the empty_homes_data directory of the repo
 
 ## Docker process
 
@@ -36,7 +36,7 @@ in the command line type the following from the repo root folder
 
 - `pip install spacy numpy pandas` #installs the required libraries
 - `python -m spacy download en_core_web_lg` #the spaCy model uses the large vector language model optimized for CPU
-- `python ./full_ocod_parse_process.py ./empty_homes_data/`
+- `python ./full_ocod_parse_process.py ./data/`
 
 The script itself is [full_ocod_parse_process.py](full_ocod_parse_process.py)
 
@@ -92,9 +92,9 @@ This dataset pipeline is meant to be used, suggestions and helpful commits and i
 
 # Citing this dataset
 
-If you use this dataset please cite the pre-print found at
+If you use this repository please cite the paper
 
-What's in the laundromat? Mapping and characterising offshore owned domestic property in London	 [arXiv:2207.10931](https://arxiv.org/abs/2207.10931)
+What's in the laundromat? Mapping and characterising offshore owned residential property in London	 [https://doi.org/10.1177/2399808323115548](https://doi.org/10.1177/2399808323115548)
 
 # OGL notices
 

@@ -71,7 +71,7 @@ print('Classification type 2')
 ocod_data = classification_type2(ocod_data)
 
 print('Contract ocod dataset')
-ocod_data = contract_ocod_after_classification(ocod_data, class_type = 'class2', classes = ['domestic'] )
+ocod_data = contract_ocod_after_classification(ocod_data, class_type = 'class2', classes = ['residential'] )
 
 print('Process complete saving the enchanced ocod dataset to ' + root_path + 'enhanced_ocod_dataset.csv')
 
