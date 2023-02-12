@@ -14,4 +14,4 @@ build the docker file using by entering the following command into the command l
 
 To run the script enter to below from the base of the repo
 
-`docker run --rm -it -v $(pwd):/app ocod/parse_process:latest ./app/full_ocod_parse_process.py ./app/data/`
+`docker run --rm -it -v $(pwd):/app ocod/parse_process:latest ./app/full_ocod_parse_process.py ./app/data/ OCOD.csv OCOD_enhanced.csv`

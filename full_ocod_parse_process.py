@@ -8,14 +8,20 @@ It takes a single argument which is the root path of the empty_homes_data path f
 It requires that all data is found in that folder.
 I hope to update the script so that it is easier to swap out the data for new data when it is created
 
+
+docker run --rm -it -v $(pwd):/app jonno/parse_process:test ./app/enhance_ocod/full_ocod_parse_process.py ./app/data Malcom_UK_Owners_Missing.csv Malcom_UK_Owners_Missing_enhanced.csv
 """
 
 args = sys.argv  
 
 root_path = str(args[1])
 
+data_file = str(args[2])
 
-ocod_data = load_and_prep_OCOD_data(root_path + 'OCOD.csv')
+ouput_file = str(args[3])
+
+
+ocod_data = load_and_prep_OCOD_data(root_path + data_file)
 
 all_entities = spacy_pred_fn(spacy_model_path = root_path+'spacy_cpu_model', ocod_data = ocod_data)
 #all_entities = load_cleaned_labels(root_path + 'full_dataset_no_overlaps.json')
@@ -73,13 +79,13 @@ ocod_data = classification_type2(ocod_data)
 print('Contract ocod dataset')
 ocod_data = contract_ocod_after_classification(ocod_data, class_type = 'class2', classes = ['residential'] )
 
-print('Process complete saving the enchanced ocod dataset to ' + root_path + 'enhanced_ocod_dataset.csv')
+print('Process complete saving the enchanced ocod dataset to ' + root_path + ouput_file)
 
 #subset the dataframe to only the columns necessary for the dataset and save
 ocod_data.loc[:, ['title_number', 'within_title_id', 'within_larger_title', 'unique_id', 'unit_id', 'unit_type',
        'building_name', 'street_number', 'street_name', 'postcode', 'city',
        'district',  'region', 'property_address', 'oa11cd', 'lsoa11cd',
        'msoa11cd',  'lad11cd', 'class', 'class2']].rename(columns={'within_title_id':'nested_id',
-                                                                  'within_larger_title':'nested_title'}).to_csv(root_path+'enhanced_ocod_dataset.csv')
+                                                                  'within_larger_title':'nested_title'}).to_csv(root_path + ouput_file)
 
 #FINISH!

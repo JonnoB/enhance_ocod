@@ -36,7 +36,10 @@ in the command line type the following from the repo root folder
 
 - `pip install spacy numpy pandas` #installs the required libraries
 - `python -m spacy download en_core_web_lg` #the spaCy model uses the large vector language model optimized for CPU
-- `python ./full_ocod_parse_process.py ./data/`
+- `python ./full_ocod_parse_process.py ./data/ OCOD.csv OCOD_enhanced.csv` 
+
+The python command takes three arguments the path to the data folder (shown above as `./data/`), the name of the file to be parsed (`OCOD.csv`), the name of the file created at the end of the parsing process (`OCOD_enhanced.csv`). Note all files need to be inside the data folder. 
+The process or indeed docker can be run in a loop using a bash script to parse multiple files.
 
 The script itself is [full_ocod_parse_process.py](full_ocod_parse_process.py)
 

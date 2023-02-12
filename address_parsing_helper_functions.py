@@ -476,7 +476,7 @@ def load_and_prep_OCOD_data(file_path):
     ocod_data = ocod_data.dropna(subset = 'property_address')
     ocod_data.reset_index(inplace = True, drop = True)
     ocod_data = ocod_data[['title_number', 'tenure', 'district', 'county',
-       'region', 'multiple_address_indicator', 'price_paid', 'property_address']]
+       'region', 'price_paid', 'property_address']]
 
     ocod_data['property_address'] = ocod_data['property_address'].str.lower()
 
@@ -517,7 +517,7 @@ def post_process_expanded_data(expanded_data, ocod_data):
     #re-order the columns and drop columns that are not needed
 
     full_expanded_data =full_expanded_data[['title_number', 'within_title_id', 'unique_id', 'within_larger_title',  'tenure','unit_id', 'unit_type','building_name','street_number', 'street_name', 'postcode','city',  'district', 'county', 'region',
-       'multiple_address_indicator', 'price_paid' ,'property_address']].replace('block', np.NaN)
+       'price_paid' ,'property_address']].replace('block', np.NaN)
     
     return full_expanded_data
 
