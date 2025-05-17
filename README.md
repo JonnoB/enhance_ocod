@@ -61,22 +61,23 @@ The key stages are
 
 # Required Datasets
 
-In order to re-create or update the Enhanced OCOD dataset several opensource datasets are required. This datasets should be downloaded into the empty_homes_data folder in this repo and renamed as below. All the data is free and covered by an open government licence (OGL), however the OCOD dataset requires the user create and account.
+In order to re-create or update the Enhanced OCOD dataset several opensource datasets are required. This datasets should be downloaded into the empty_homes_data folder in this repo and renamed as below. All the data is free, however the licences are not all [OGL](https://www.nationalarchives.gov.uk/what-is-open-government-licence/), 'n addition the OCOD dataset requires the user create and account.
 
 | Dataset                                                                                             | Change file/folder name to | Type   |
 |-----------------------------------------------------------------------------------------------------|----------------------------|--------|
-| [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )                     | OCOD.csv                   | csv    |
-| [ONSPD](https://geoportal.statistics.gov.uk/search?q=onspd)\*                                         | ONSPD.zip                  | zip    |
-| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\* | price_paid_files           | folder |
-| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*                  | VOA_ratings.csv            | csv    |
+| [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )\*| OCOD.csv                   | csv    |
+| [ONSPD](https://geoportal.statistics.gov.uk/search?q=onspd)\*\*                                         | ONSPD.zip                  | zip    |
+| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\*\* | price_paid_files           | folder |
+| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*\*                  | VOA_ratings.csv            | csv    |
 
 Note: 
-\* Only folder name of the ONSPD zip needs to be changed the data inside doesn't. The script searches for the correct file inside. 
+\* The OCOD dataset is a convoluted experience to get hold of you need to create an account and also use a bank card to confim identity, the bank card will be charged £0.0. Whether this much security is necessary is debatable, and could be debated by contacting your MP to complain.
+\*\* Only folder name of the ONSPD zip needs to be changed the data inside doesn't. The script searches for the correct file inside. The ONSPD file can be fiddly to find, as there are a lot of files with ONSPD in the name try searching "ONSPD" followed by the year e.g. "ONSPD 2025".
 Future versions of the script may make it more flexible with regards file names.
 
-\*\* The price paid dataset should be downloaded as yearly files and places inside a folder called 'price_paid_files'. It is advisable to download several years. The paper used 2017-2021. Having more years increases the chances of being able to fill in missing information in OCOD, however after a few years the benefits reduce and the memory costs become high.
+\*\*\* The price paid dataset should be downloaded as yearly files and places inside a folder called 'price_paid_files'. It is advisable to download several years. The paper used 2017-2021. Having more years increases the chances of being able to fill in missing information in OCOD, however after a few years the benefits reduce and the memory costs become high.
 
-\*\*\* There are several files in the dataset. The one with a name similar to 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
+\*\*\*\* There are several files in the dataset. The one with a name similar to 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
 
 # Additional code
 
