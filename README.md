@@ -110,6 +110,7 @@ What's in the laundromat? Mapping and characterising offshore owned residential 
 
 # Todo
 
+- The big change is rebuilding the test dataset and the in a more straight forward way not using the programmatic approach and also probably not SpaCy
 - Changing model to HF means it can be easily downloaded into the program which would be super helpful instead of storing the SpaCy weights
 - Review and probably remove the human loop parts.Possibly switch to
 - Review training data, see how modern LLM's can parse the data, use them to create larger training corpus
