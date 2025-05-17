@@ -1,10 +1,10 @@
 # The Enhanced OCOD dataset
 
-This repo provides the pipeline to create the enhanced OCOD dataset. The Enhanced OCOD dataset is based on the The paper cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Residential, Business, etc).
+This repo provides the pipeline to create the enhanced OCOD dataset, it cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This Land Registry OCOD dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Residential, Business, etc).
 
-The enhanced OCOD dataset, attempt to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, residential, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
+The enhanced OCOD dataset, attempts to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, residential, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
 
-The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundromat: Mapping and characterising offshore owned residential property in London'](https://doi.org/10.1177/2399808323115548). The code for the analysis in the paper can be found [here](https://github.com/JonnoB/inspecting_the_laundromat).
+The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundromat: Mapping and characterising offshore owned residential property in London'](https://doi.org/10.1177/23998083231155483). The code for the analysis in the paper can be found [here](https://github.com/JonnoB/inspecting_the_laundromat).
 
 
 # The Dataset
@@ -76,7 +76,7 @@ Future versions of the script may make it more flexible with regards file names.
 
 \*\* The price paid dataset should be downloaded as yearly files and places inside a folder called 'price_paid_files'. It is advisable to download several years. The paper used 2017-2021. Having more years increases the chances of being able to fill in missing information in OCOD, however after a few years the benefits reduce and the memory costs become high.
 
-\*\*\* There are several files in the dataset. The one with a simmilar too 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
+\*\*\* There are several files in the dataset. The one with a name similar to 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
 
 # Additional code
 
@@ -107,3 +107,17 @@ What's in the laundromat? Mapping and characterising offshore owned residential 
 - Contains Royal Mail data © Royal Mail copyright and database right 2022
 - Source: Office for National Statistics licensed under the Open Government Licence v.3.0
 
+
+# Todo
+
+- Changing model to HF means it can be easily downloaded into the program which would be super helpful instead of storing the SpaCy weights
+- Review and probably remove the human loop parts.Possibly switch to
+- Review training data, see how modern LLM's can parse the data, use them to create larger training corpus
+- set up lightning evironment and test current method works
+- perform memory and speed profiling on the process, or different sections of it, what optimisations would speed things up?
+- code refactor for ease of understanding
+- add docstrings and type hints
+- tests!
+- convert to python library
+- make pypi installable
+- remove post-codes from saved data
