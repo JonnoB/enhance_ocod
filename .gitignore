@@ -6,6 +6,7 @@ humanloop_test/.humanloop/
 __pycache__
 .ipynb_checkpoints
 .venv
+.env
 
 *.db
 
