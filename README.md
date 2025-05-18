@@ -12,7 +12,7 @@ The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundro
 The compressed dataset from the time the paper was written is included with this repo as 'OCOD_classes.tar.xz'. However, it will become out of date and so it is reccomended to rebuild the dataset with current information. The following section describes how to generate the enhanced OCOD dataset.
 
 # How to create the Enhanced OCOD dataset
-This repo contains the code needed to create the enchanced OCOD dataset. The simplest way is to build and run the Docker image found [here](dockerfile). Otherwise the script [full_ocod_parse_process.py] can be run from a python environment. The process is quite memory intense using a machine with 16Gb is advisable.
+This repo contains the code needed to create the enchanced OCOD dataset. The script [full_ocod_parse_process.py] can be run from a python environment. The process is quite memory intense using a machine with 16Gb is advisable.
 
 ## Project set-up
 
@@ -21,14 +21,6 @@ This repo contains the code needed to create the enchanced OCOD dataset. The sim
 - navigate to empty_homes_data
 - download required opensource data and rename files/folder (see below)
 - download spaCy model from [this OSF data repository](https://osf.io/khavm/) and extract in the empty_homes_data directory of the repo
-
-## Docker process
-
-See the [docker readme](dockerfile) for detailed instructions
-
-- install docker
-- build docker
-- run docker
 
 ## Python process
 
@@ -39,7 +31,7 @@ in the command line type the following from the repo root folder
 - `python ./full_ocod_parse_process.py ./data/ OCOD.csv OCOD_enhanced.csv` 
 
 The python command takes three arguments the path to the data folder (shown above as `./data/`), the name of the file to be parsed (`OCOD.csv`), the name of the file created at the end of the parsing process (`OCOD_enhanced.csv`). Note all files need to be inside the data folder. 
-The process or indeed docker can be run in a loop using a bash script to parse multiple files.
+
 
 The script itself is [full_ocod_parse_process.py](full_ocod_parse_process.py)
 
