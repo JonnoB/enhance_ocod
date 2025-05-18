@@ -63,8 +63,8 @@ In order to re-create or update the Enhanced OCOD dataset several opensource dat
 | [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*\*                  | VOA_ratings.csv            | csv    | [Yes](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)              |
 
 Note:
- 
-\* The OCOD dataset is a convoluted experience to get hold of you need to create an account and also use a bank card to confim identity, the bank card will be charged £0.0. Whether this much security is necessary is debatable, and could be debated by contacting your MP to complain.
+
+\* The OCOD dataset is a convoluted experience to get hold of you need to create an account and also use a bank card to confim identity, the bank card will be charged £0.0. Whether this much security is necessary is debatable, and in fact can be debated by contacting your [MP to complain](https://members.parliament.uk/FindYourMP).
 
 \*\* Only folder name of the ONSPD zip needs to be changed the data inside doesn't. The script searches for the correct file inside. The ONSPD file can be fiddly to find, as there are a lot of files with ONSPD in the name try searching "ONSPD" followed by the year e.g. "ONSPD 2025".
 Future versions of the script may make it more flexible with regards file names.
