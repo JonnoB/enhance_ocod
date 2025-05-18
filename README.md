@@ -55,12 +55,12 @@ The key stages are
 
 In order to re-create or update the Enhanced OCOD dataset several opensource datasets are required. This datasets should be downloaded into the empty_homes_data folder in this repo and renamed as below. All the data is free, however the licences are not all [OGL](https://www.nationalarchives.gov.uk/what-is-open-government-licence/), 'n addition the OCOD dataset requires the user create and account.
 
-| Dataset                                                                                             | Change file/folder name to | Type   |
-|-----------------------------------------------------------------------------------------------------|----------------------------|--------|
-| [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )\*| OCOD.csv                   | csv    |
-| [ONSPD](https://geoportal.statistics.gov.uk/search?q=onspd)\*\*                                         | ONSPD.zip                  | zip    |
-| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\*\* | price_paid_files           | folder |
-| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*\*                  | VOA_ratings.csv            | csv    |
+| Dataset                                                                                             | Change file/folder name to | Type   | Available on API |
+|-----------------------------------------------------------------------------------------------------|----------------------------|--------|------------------|
+| [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )\*| OCOD.csv                   | csv    | [Yes](https://use-land-property-data.service.gov.uk/api-information)              |
+| [ONSPD](https://open-geography-portalx-ons.hub.arcgis.com/datasets/ons::ons-postcode-directory-february-2025-for-the-uk/about)\*\*                                         | ONSPD.zip                  | zip    | [Yes](https://www.api.gov.uk/ons/open-geography-portal/#open-geography-portal)              |
+| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\*\* | price_paid_files           | folder | No              |
+| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*\*                  | VOA_ratings.csv            | csv    | [Yes](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)              |
 
 Note: 
 \* The OCOD dataset is a convoluted experience to get hold of you need to create an account and also use a bank card to confim identity, the bank card will be charged £0.0. Whether this much security is necessary is debatable, and could be debated by contacting your MP to complain.
