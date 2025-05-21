@@ -30,7 +30,7 @@ def train():
         per_device_train_batch_size=config.batch_size,
         num_train_epochs=config.epochs,
         learning_rate=config.lr,
-        evaluation_strategy="epoch" if eval_data else "no",
+        eval_strategy="epoch" if eval_data else "no",
         save_strategy="epoch",
         save_total_limit=3,
         load_best_model_at_end=True if eval_data else False,
