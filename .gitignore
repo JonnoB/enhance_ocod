@@ -13,3 +13,6 @@ __pycache__
 *.log
 .config
 malcom_loop.sh
+
+
+temp.ipynb
