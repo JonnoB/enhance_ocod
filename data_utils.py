@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Iterator
 import random
 import pandas as pd
+from torch.utils.data import Dataset
 
 def load_data(file_path: str, max_samples: int = None) -> List[Dict]:
     """Load data from JSON file in GLiNER format."""
@@ -71,3 +72,43 @@ def convert_df_to_gliner_format(df: pd.DataFrame) -> List[Dict]:
         })
     
     return gliner_data
+
+
+class GLiNERDataset(Dataset):
+    def __init__(self, data: List[Dict], tokenizer, max_length=512):
+        self.data = data
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+        text = item['text']
+        spans = item.get('spans', [])
+        
+        # Tokenize the text
+        encoding = self.tokenizer(
+            text,
+            max_length=self.max_length,
+            padding='max_length',
+            truncation=True,
+            return_tensors='pt'
+        )
+        
+        # Prepare labels
+        labels = []
+        for span in spans:
+            labels.append({
+                'text': span['text'],
+                'start': span['start'],
+                'end': span['end'],
+                'label': span['label']
+            })
+        
+        return {
+            'input_ids': encoding['input_ids'].squeeze(0),
+            'attention_mask': encoding['attention_mask'].squeeze(0),
+            'labels': labels
+        }

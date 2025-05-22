@@ -1,9 +1,11 @@
 from gliner import GLiNER
 from gliner.training import Trainer, TrainingArguments
-from data_utils import load_data, save_data, train_val_split
+from data_utils import load_data, save_data, train_val_split, GLiNERDataset
 from config import TrainingConfig
 from pathlib import Path
 import torch
+from torch.utils.data import Dataset
+from typing import List, Dict
 
 def train():
     # Load config
@@ -24,6 +26,10 @@ def train():
     # Initialize model
     model = GLiNER.from_pretrained(config.model_name)
     
+    # Create datasets
+    train_dataset = GLiNERDataset(train_data, model.tokenizer)
+    eval_dataset = GLiNERDataset(eval_data, model.tokenizer) if eval_data else None
+    
     # Training arguments
     training_args = TrainingArguments(
         output_dir=str(output_dir),
@@ -33,7 +39,7 @@ def train():
         eval_strategy="epoch" if eval_data else "no",
         save_strategy="epoch",
         save_total_limit=3,
-        load_best_model_at_end=True if eval_data else False,
+        load_best_model_at_end=bool(eval_data),
         metric_for_best_model="f1" if eval_data else None,
         greater_is_better=True,
     )
@@ -42,8 +48,8 @@ def train():
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=train_data,
-        eval_dataset=eval_data if eval_data else None,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
     )
     
     # Train the model
