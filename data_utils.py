@@ -2,15 +2,17 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Iterator
 import random
+import pandas as pd
 
 def load_data(file_path: str, max_samples: int = None) -> List[Dict]:
-    """Load data from JSONL file in GLiNER format."""
-    data = []
+    """Load data from JSON file in GLiNER format."""
     with open(file_path, 'r') as f:
-        for i, line in enumerate(f):
-            if max_samples and i >= max_samples:
-                break
-            data.append(json.loads(line))
+        data = json.load(f)
+        
+    # If max_samples is specified, limit the number of samples
+    if max_samples:
+        data = data[:max_samples]
+        
     return data
 
 def save_data(data: List[Dict], file_path: str) -> None:

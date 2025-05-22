@@ -7,3 +7,4 @@ transformers
 datasets
 config
 gliner
+accelerate>=0.26.0
