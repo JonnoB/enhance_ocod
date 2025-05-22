@@ -75,7 +75,7 @@ def convert_df_to_gliner_format(df: pd.DataFrame) -> List[Dict]:
 
 
 class GLiNERDataset(Dataset):
-    def __init__(self, data: List[Dict], tokenizer, max_length=512):
+    def __init__(self, data: List[Dict], tokenizer, max_length=256):
         self.data = data
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -85,30 +85,17 @@ class GLiNERDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.data[idx]
-        text = item['text']
-        spans = item.get('spans', [])
         
-        # Tokenize the text
-        encoding = self.tokenizer(
-            text,
-            max_length=self.max_length,
-            padding='max_length',
-            truncation=True,
-            return_tensors='pt'
-        )
-        
-        # Prepare labels
-        labels = []
-        for span in spans:
-            labels.append({
-                'text': span['text'],
-                'start': span['start'],
-                'end': span['end'],
-                'label': span['label']
-            })
+        # Convert from {'text': ..., 'spans': [...]} to {'text': ..., 'ner': [...]}
+        ner_spans = []
+        for span in item.get('spans', []):
+            ner_spans.append([
+                span['start'],        # Start position
+                span['end'],          # End position
+                span['label'].upper() # Convert label to uppercase (GLiNER convention)
+            ])
         
         return {
-            'input_ids': encoding['input_ids'].squeeze(0),
-            'attention_mask': encoding['attention_mask'].squeeze(0),
-            'labels': labels
+            'tokenized_text': item['text'],
+            'ner': ner_spans  # This is the key format GLiNER expects
         }
