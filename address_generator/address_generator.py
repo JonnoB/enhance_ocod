@@ -2,6 +2,8 @@ import yaml
 import os
 import random
 from typing import Dict, List, Any
+import re
+from typing import List, Tuple
 
 
 class AddressGenerator:
@@ -101,17 +103,85 @@ class AddressGenerator:
         # Select property type
         property_type = self._sample_property_type()
         
-        # Generate structure (single/range/list)
+        # Generate structure
         structure = self.structure_generator.generate_structure(property_type)
         
-        # Build components
-        address_components = self.component_builder.build_components(structure)
+        # Build tagged components
+        tagged_components = self.component_builder.build_components(structure)
         
-        # Apply corruption (commented out for now since CorruptionEngine is disabled)
-        # corrupted_components = self.corruption_engine.apply_corruption(address_components)
+        # Apply corruption (temporarily skip until implemented)
+        # corrupted_components = self.corruption_engine.apply_corruption(tagged_components)
+        corrupted_components = tagged_components  # Direct assignment for now
         
-        # Format into final address text and spans
-        return self._format_address(address_components)
+        # Parse tags and format final address
+        return self._parse_tags_and_format(corrupted_components)
+
+    def _parse_tags_and_format(self, components: Dict) -> Dict[str, Any]:
+        """Parse tags from components and create final address with spans"""
+        
+        # Build raw address with tags
+        component_order = [
+            'unit_type', 'unit_id', 'building_name', 'street_number', 
+            'street_name', 'city', 'postcode'
+        ]
+        
+        tagged_parts = []
+        for component_type in component_order:
+            if component_type in components and components[component_type]:
+                tagged_parts.append(str(components[component_type]))
+        
+        # Join with commas
+        tagged_address = ", ".join(tagged_parts)
+        
+        # Parse tags and create spans
+        return self._extract_spans_from_tags(tagged_address)
+
+    def _extract_spans_from_tags(self, tagged_text: str) -> Dict[str, Any]:
+        """Extract entities from tagged text and create clean text + spans"""
+        
+        # Updated pattern to handle underscores in tag names
+        tag_pattern = r'<([\w_]+)>(.*?)</\1>'
+        matches = list(re.finditer(tag_pattern, tagged_text))
+        
+        spans = []
+        clean_text = tagged_text
+        
+        # Process matches from left to right, tracking cumulative offset
+        cumulative_offset = 0
+        
+        for match in matches:
+            tag_name = match.group(1)
+            content = match.group(2)
+            
+            # Position in original tagged text
+            tagged_start = match.start()
+            tagged_end = match.end()
+            
+            # Position in clean text (accounting for previously removed tags)
+            clean_start = tagged_start - cumulative_offset
+            clean_end = clean_start + len(content)
+            
+            # Create span
+            spans.append({
+                'text': content,
+                'start': clean_start,
+                'end': clean_end,
+                'label': tag_name
+            })
+            
+            # Update cumulative offset
+            opening_tag = f"<{tag_name}>"
+            closing_tag = f"</{tag_name}>"
+            tag_overhead = len(opening_tag) + len(closing_tag)
+            cumulative_offset += tag_overhead
+        
+        # Remove all tags to create clean text
+        clean_text = re.sub(tag_pattern, r'\2', tagged_text)
+        
+        return {
+            'text': clean_text,
+            'spans': spans
+        }
 
     def _sample_property_type(self) -> str:
         types = list(self.config['parameters']['property_types'].keys())
@@ -198,12 +268,12 @@ class ComponentBuilder:
             
             if random.random() < self.config['parameters']['street_generation']['suffix_probability']:
                 suffix = random.choice(self.config['components']['street_suffixes'])
-                return f"{base_name} {suffix}"
+                return f"<street_name>{base_name} {suffix}</street_name>"
             else:
-                return base_name
+                return f"<street_name>{base_name}</street_name>"
         else:
             standalone = random.choice(self.config['components']['standalone_streets'])
-            return self._add_possessive(standalone)
+            return f"<street_name>{self._add_possessive(standalone)}</street_name>"
     
     def generate_building_name(self, property_type: str) -> str:
         """Generate building name with possible possessive"""
@@ -217,43 +287,40 @@ class ComponentBuilder:
         
         if random.random() < self.config['parameters']['building_generation']['suffix_probability']:
             suffix = random.choice(suffixes)
-            return f"{base_name} {suffix}"
+            return f"<building_name>{base_name} {suffix}</building_name>"
         else:
-            return base_name
+            return f"<building_name>{base_name}</building_name>"
 
     def build_components(self, structure: Dict) -> Dict:
-        """Build all address components based on structure"""
+        """Build tagged address components"""
         components = {}
         property_type = structure['property_type']
         
-        # Generate street components
-        components['street_name'] = self.generate_street_name()
-        
-        # Generate street number (could be single, range, or list based on structure)
+        # Generate tagged components
         if structure['structure_type'] == 'range':
             start = random.randint(1, 50)
             end = start + random.randint(2, 20)
             filter_type = random.choice(['odds', 'evens', None])
             components['street_number'] = self.generate_number_range(start, end, filter_type)
-            if filter_type:
-                components['number_filter'] = filter_type
         elif structure['structure_type'] == 'list':
             numbers = sorted(random.sample(range(1, 100), random.randint(2, 5)))
             components['street_number'] = self.generate_number_list(numbers)
         else:
-            components['street_number'] = str(random.randint(1, 999))
+            components['street_number'] = f"<street_number>{random.randint(1, 999)}</street_number>"
         
-        # Add building name sometimes
-        if random.random() < 0.3:  # 30% chance of building name
+        # Other tagged components
+        components['street_name'] = self.generate_street_name()
+        
+        if random.random() < 0.3:
             components['building_name'] = self.generate_building_name(property_type)
         
-        # Add unit info for flats/apartments
         if property_type == 'residential' and random.random() < 0.4:
-            components['unit_type'] = random.choice(self.config['components']['unit_types'])
-            components['unit_id'] = str(random.randint(1, 50))
+            unit_type = random.choice(self.config['components']['unit_types'])
+            unit_id = str(random.randint(1, 50))
+            components['unit_type'] = f"<unit_type>{unit_type}</unit_type>"
+            components['unit_id'] = f"<unit_id>{unit_id}</unit_id>"
         
-        # Add city and postcode
-        components['city'] = random.choice(self.config['components']['cities'])
+        components['city'] = f"<city>{random.choice(self.config['components']['cities'])}</city>"
         components['postcode'] = self._generate_postcode()
         
         return components
@@ -328,35 +395,46 @@ class ComponentBuilder:
         # Sometimes include space, sometimes don't
         space = ' ' if random.random() < 0.8 else ''
         
-        return f"{area}{district}{space}{sector}{unit}"
+        return f"<postcode>{area}{district}{space}{sector}{unit}</postcode>"
 
     def generate_number_range(self, start: int, end: int, filter_type: str = None, 
                             connector_style: str = "to", spacing: str = "normal", 
-                            parentheses: bool = True) -> str:
-        # Choose connector
+                            parentheses: bool = True, plural_probability: float = 0.5) -> str:
+        # Build the range text
         if connector_style == "to":
             connector = " to "
         elif connector_style == "dash":
             connector = "-" if spacing == "tight" else " - "
         
-        # Build range part
         range_part = f"{start}{connector}{end}"
         
-        # Add filter if present
         if filter_type:
-            if parentheses:
-                filter_part = f" ({filter_type} only)" if filter_type in ["odds", "evens"] else f" ({filter_type})"
+            # Handle optional plurals for odds/evens
+            if filter_type in ["odds", "evens"]:
+                if random.random() < plural_probability:
+                    filter_text = filter_type  # "odds" or "evens" 
+                else:
+                    filter_text = filter_type[:-1]  # "odd" or "even"
             else:
-                filter_part = f" {filter_type}"
-            return range_part + filter_part
-        
-        return range_part
+                filter_text = filter_type  # other filter types unchanged
+            
+            if parentheses:
+                return f"<street_number>{range_part}</street_number> (<number_filter>{filter_text}</number_filter> only)"
+            else:
+                return f"<street_number>{range_part}</street_number> <number_filter>{filter_text}</number_filter>"
+        else:
+            return f"<street_number>{range_part}</street_number>"
 
     def generate_number_list(self, numbers: List[int], final_connector: str = "and") -> str:
+        """Generate individual tagged numbers in a list"""
         if len(numbers) == 1:
-            return str(numbers[0])
+            return f"<street_number>{numbers[0]}</street_number>"
         elif len(numbers) == 2:
-            return f"{numbers[0]} {final_connector} {numbers[1]}"
+            return f"<street_number>{numbers[0]}</street_number> {final_connector} <street_number>{numbers[1]}</street_number>"
         else:
-            return f"{', '.join(map(str, numbers[:-1]))}, {final_connector} {numbers[-1]}"
-    
+            # For longer lists: "2, 4, and 6"
+            tagged_numbers = [f"<street_number>{num}</street_number>" for num in numbers[:-1]]
+            result = ", ".join(tagged_numbers)
+            result += f", {final_connector} <street_number>{numbers[-1]}</street_number>"
+            return result
+
