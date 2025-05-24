@@ -58,6 +58,20 @@ def main(args: List[str]) -> None:
 
     # NLP processing
     all_entities = spacy_pred_fn(spacy_model_path=root_path+'spacy_cpu_model', ocod_data=ocod_data)
+
+    fixes specific to the original dataset.
+        # Known typo corrections
+    TYPO_CORRECTIONS = {
+        "stanley court ": "stanley court, ",
+        "100-1124": "100-112",
+        "40a, 40, 40¨, 42, 44": "40a, 40, 40, 42, 44",
+        # Add more as discovered
+    }
+
+    # Apply typo corrections
+    for typo, correction in TYPO_CORRECTIONS.items():
+        address_series = address_series.str.replace(typo, correction, regex=False)
+
     full_expanded_data = parsing_and_expansion_process(all_entities, expand_addresses=True)
     del all_entities  # memory management
     

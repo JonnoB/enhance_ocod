@@ -1,0 +1,60 @@
+# Import external name files
+imports:
+  base_names: "names.yaml:base_names"
+  standalone_streets: "names.yaml:standalone_streets"
+
+components:
+  street_suffixes: 
+    - "Road"
+    - "Street"
+    - "Lane"
+    - "Avenue"
+    - "Close"
+    - "Drive"
+    - "Way"
+    - "Gardens"
+    
+  building_suffixes:
+    residential: 
+      - "House"
+      - "Court"
+      - "Mansions"
+      - "Apartments"
+      - "Lodge"
+      - "Place"
+    commercial:
+      - "Centre" 
+      - "Complex"
+      - "Estate"
+      - "Park"
+      - "Plaza"
+      - "Tower"
+      
+  cities: ["London", "Birmingham", "Manchester", "Leeds", "Liverpool"]
+  unit_types: ["flat", "apartment", "unit", "suite", "office", "parking"]
+
+# Add this missing parameters section
+parameters:
+  property_types:
+    residential: 0.2
+    business: 0.2
+    airspace: 0.2
+    land: 0.2
+    carpark: 0.2
+    
+  name_generation:
+    possessive_probability: 0.15
+    
+  street_generation:
+    use_base_name_probability: 0.7
+    suffix_probability: 0.9
+    
+  building_generation:
+    use_base_name_probability: 0.8
+    suffix_probability: 0.95
+    
+  structure:
+    max_properties_per_address: 5
+    range_probability: 0.3
+    list_probability: 0.4
+    single_probability: 0.3

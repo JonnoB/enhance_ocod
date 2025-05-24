@@ -464,35 +464,74 @@ def parsing_and_expansion_process(all_entities, expand_addresses = False ):
     
     return out
 
+import re
+import pandas as pd
+
 def load_and_prep_OCOD_data(file_path):
+    """
+    Load and preprocess OCOD dataset for address parsing.
     
+    Args:
+        file_path: Path to the OCOD CSV file
+        
+    Returns:
+        pd.DataFrame: Processed OCOD data with normalized addresses
     """
-    This function is used to provide a simplified interface for the loading and minor processing required for the OCOD dataset
-    before the key meta data it contains is added to the expanded dataset
-    """
-    ocod_data =  pd.read_csv(file_path,
-                   encoding_errors= 'ignore').rename(columns = lambda x: x.lower().replace(" ", "_"))
-    #empty addresses cannot be used. however there are only three so not a problem
-    ocod_data = ocod_data.dropna(subset = 'property_address')
-    ocod_data.reset_index(inplace = True, drop = True)
-    ocod_data = ocod_data[['title_number', 'tenure', 'district', 'county',
-       'region', 'price_paid', 'property_address']]
-
-    ocod_data['property_address'] = ocod_data['property_address'].str.lower()
-
-    #ensure there is a space after commas
-    #This is because some numbers are are written as 1,2,3,4,5 which causes issues during tokenisation
-    ocod_data.property_address = ocod_data.property_address.str.replace(',', r', ', regex = True)
-    #remove multiple spaces
-    ocod_data.property_address = ocod_data.property_address.str.replace('\s{2,}', r' ', regex = True)
-
-    #typo in the data leads to a large number of fake flats
-    ocod_data.loc[:, 'property_address'] = ocod_data['property_address'].str.replace("stanley court ", "stanley court, ")
-    #This typo leads to some rather silly addresses
-    ocod_data.loc[:, 'property_address'] = ocod_data['property_address'].str.replace("100-1124", "100-112")
-    ocod_data.loc[:, 'property_address'] = ocod_data['property_address'].str.replace("40a, 40, 40¨, 42, 44", "40a, 40, 40, 42, 44")
+    
+    # Define columns to keep upfront to avoid loading unnecessary data
+    KEEP_COLUMNS = ['title_number', 'tenure', 'district', 'county',
+                    'region', 'price_paid', 'property_address']
+    
+    # pre-processing regex patterns for better tokenisation
+    REGEX_PATTERNS = [
+        # Add spaces around special chars between alphanumeric
+        (r'(?<=[a-z0-9])[:<>=/\(\)](?=[a-z])', r' \g<0> '),
+        (r'(?<=[a-z])[:<>=/\(\)](?=[a-z0-9])', r' \g<0> '),
+        # Separate parentheses from digits
+        (r'(\))(\d)', r'\1 \2'),
+        (r'(\d)(\()', r'\1 \2'),
+        # Ensure space after ALL punctuation (not just commas)
+        (r'([,;:])(?=\S)', r'\1 '),
+        # Normalize hyphen spacing for ranges
+        (r'(\d+)\s*-\s*(\d+)', r'\1-\2'),
+    ]
+    
+    
+    try:
+        # Load only required columns if possible
+        ocod_data = pd.read_csv(
+            file_path,
+            usecols=lambda x: x.lower().replace(" ", "_") in KEEP_COLUMNS,
+            encoding_errors='ignore'
+        ).rename(columns=lambda x: x.lower().replace(" ", "_"))
+    except ValueError:
+        # Fallback if column names don't match expected format
+        ocod_data = pd.read_csv(
+            file_path,
+            encoding_errors='ignore'
+        ).rename(columns=lambda x: x.lower().replace(" ", "_"))
+        ocod_data = ocod_data[KEEP_COLUMNS]
+    
+    # Remove rows with empty addresses
+    ocod_data = ocod_data.dropna(subset='property_address')
+    
+    ocod_data.reset_index(drop=True, inplace=True)
+    
+    # Vectorized string operations
+    address_series = ocod_data['property_address'].str.lower()
+    
+    # Apply all regex patterns
+    for pattern, replacement in REGEX_PATTERNS:
+        address_series = address_series.str.replace(pattern, replacement, regex=True)
+    
+    # Final cleanup: remove extra spaces and trim
+    address_series = address_series.str.replace(r'\s{2,}', ' ', regex=True).str.strip()
+    
+    ocod_data['property_address'] = address_series
     
     return ocod_data
+
+
 
 def post_process_expanded_data(expanded_data, ocod_data):
     """

@@ -1,0 +1,322 @@
+[
+  {
+    "text": "apartment, 43, 30 to 45 (evens only), Mill Avenue, Birmingham, DN10 2XL",
+    "spans": [
+      {
+        "text": "apartment",
+        "start": 0,
+        "end": 9,
+        "label": "unit_type"
+      },
+      {
+        "text": "43",
+        "start": 11,
+        "end": 13,
+        "label": "unit_id"
+      },
+      {
+        "text": "30 to 45 (evens only)",
+        "start": 15,
+        "end": 36,
+        "label": "street_number"
+      },
+      {
+        "text": "Mill Avenue",
+        "start": 38,
+        "end": 49,
+        "label": "street_name"
+      },
+      {
+        "text": "Birmingham",
+        "start": 51,
+        "end": 61,
+        "label": "city"
+      },
+      {
+        "text": "DN10 2XL",
+        "start": 63,
+        "end": 71,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "463, Church Drive, Birmingham, ol7 5tw",
+    "spans": [
+      {
+        "text": "463",
+        "start": 0,
+        "end": 3,
+        "label": "street_number"
+      },
+      {
+        "text": "Church Drive",
+        "start": 5,
+        "end": 17,
+        "label": "street_name"
+      },
+      {
+        "text": "Birmingham",
+        "start": 19,
+        "end": 29,
+        "label": "city"
+      },
+      {
+        "text": "ol7 5tw",
+        "start": 31,
+        "end": 38,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "75, Park's Way, London, en8 8by",
+    "spans": [
+      {
+        "text": "75",
+        "start": 0,
+        "end": 2,
+        "label": "street_number"
+      },
+      {
+        "text": "Park's Way",
+        "start": 4,
+        "end": 14,
+        "label": "street_name"
+      },
+      {
+        "text": "London",
+        "start": 16,
+        "end": 22,
+        "label": "city"
+      },
+      {
+        "text": "en8 8by",
+        "start": 24,
+        "end": 31,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "23, 71, 78, and 84, King Edward's Drive, Liverpool, so9d 4ft",
+    "spans": [
+      {
+        "text": "23, 71, 78, and 84",
+        "start": 0,
+        "end": 18,
+        "label": "street_number"
+      },
+      {
+        "text": "King Edward's Drive",
+        "start": 20,
+        "end": 39,
+        "label": "street_name"
+      },
+      {
+        "text": "Liverpool",
+        "start": 41,
+        "end": 50,
+        "label": "city"
+      },
+      {
+        "text": "so9d 4ft",
+        "start": 52,
+        "end": 60,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "Park Park, 4, 25, 68, and 89, Vale Way, London, pr6 2ax",
+    "spans": [
+      {
+        "text": "Park Park",
+        "start": 0,
+        "end": 9,
+        "label": "building_name"
+      },
+      {
+        "text": "4, 25, 68, and 89",
+        "start": 11,
+        "end": 28,
+        "label": "street_number"
+      },
+      {
+        "text": "Vale Way",
+        "start": 30,
+        "end": 38,
+        "label": "street_name"
+      },
+      {
+        "text": "London",
+        "start": 40,
+        "end": 46,
+        "label": "city"
+      },
+      {
+        "text": "pr6 2ax",
+        "start": 48,
+        "end": 55,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "16, 46, 65, 69, and 79, Victoria Lane, Liverpool, nr9t8sw",
+    "spans": [
+      {
+        "text": "16, 46, 65, 69, and 79",
+        "start": 0,
+        "end": 22,
+        "label": "street_number"
+      },
+      {
+        "text": "Victoria Lane",
+        "start": 24,
+        "end": 37,
+        "label": "street_name"
+      },
+      {
+        "text": "Liverpool",
+        "start": 39,
+        "end": 48,
+        "label": "city"
+      },
+      {
+        "text": "nr9t8sw",
+        "start": 50,
+        "end": 57,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "43, 46, and 64, Surrey Street, Leeds, kA4 4sj",
+    "spans": [
+      {
+        "text": "43, 46, and 64",
+        "start": 0,
+        "end": 14,
+        "label": "street_number"
+      },
+      {
+        "text": "Surrey Street",
+        "start": 16,
+        "end": 29,
+        "label": "street_name"
+      },
+      {
+        "text": "Leeds",
+        "start": 31,
+        "end": 36,
+        "label": "city"
+      },
+      {
+        "text": "kA4 4sj",
+        "start": 38,
+        "end": 45,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "High Complex, 43 to 52 (odds only), Mill's Road, Leeds, DH110xJ",
+    "spans": [
+      {
+        "text": "High Complex",
+        "start": 0,
+        "end": 12,
+        "label": "building_name"
+      },
+      {
+        "text": "43 to 52 (odds only)",
+        "start": 14,
+        "end": 34,
+        "label": "street_number"
+      },
+      {
+        "text": "Mill's Road",
+        "start": 36,
+        "end": 47,
+        "label": "street_name"
+      },
+      {
+        "text": "Leeds",
+        "start": 49,
+        "end": 54,
+        "label": "city"
+      },
+      {
+        "text": "DH110xJ",
+        "start": 56,
+        "end": 63,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "123, Field Drive, Liverpool, le12 0lt",
+    "spans": [
+      {
+        "text": "123",
+        "start": 0,
+        "end": 3,
+        "label": "street_number"
+      },
+      {
+        "text": "Field Drive",
+        "start": 5,
+        "end": 16,
+        "label": "street_name"
+      },
+      {
+        "text": "Liverpool",
+        "start": 18,
+        "end": 27,
+        "label": "city"
+      },
+      {
+        "text": "le12 0lt",
+        "start": 29,
+        "end": 37,
+        "label": "postcode"
+      }
+    ]
+  },
+  {
+    "text": "Church's Tower, 539, Vale's Street, Liverpool, ln4 9ds",
+    "spans": [
+      {
+        "text": "Church's Tower",
+        "start": 0,
+        "end": 14,
+        "label": "building_name"
+      },
+      {
+        "text": "539",
+        "start": 16,
+        "end": 19,
+        "label": "street_number"
+      },
+      {
+        "text": "Vale's Street",
+        "start": 21,
+        "end": 34,
+        "label": "street_name"
+      },
+      {
+        "text": "Liverpool",
+        "start": 36,
+        "end": 45,
+        "label": "city"
+      },
+      {
+        "text": "ln4 9ds",
+        "start": 47,
+        "end": 54,
+        "label": "postcode"
+      }
+    ]
+  }
+]
