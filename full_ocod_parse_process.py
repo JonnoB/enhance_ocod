@@ -59,7 +59,6 @@ def main(args: List[str]) -> None:
     # NLP processing
     all_entities = spacy_pred_fn(spacy_model_path=root_path+'spacy_cpu_model', ocod_data=ocod_data)
 
-    fixes specific to the original dataset.
         # Known typo corrections
     TYPO_CORRECTIONS = {
         "stanley court ": "stanley court, ",
