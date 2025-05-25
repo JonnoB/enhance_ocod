@@ -60,11 +60,13 @@ def train():
         per_device_eval_batch_size=batch_size,
         num_train_epochs=num_epochs,
         eval_strategy="steps" if eval_data else "no",
+        eval_steps=100,
         save_steps=100,
+        logging_steps=50,  # Log metrics every 50 steps
+        report_to="tensorboard",
         save_total_limit=3,
         dataloader_num_workers=0,
         use_cpu=config.device == "cpu",
-        report_to="none",
     )
     
     # Initialize Trainer
@@ -79,6 +81,12 @@ def train():
     
     # Train the model
     trainer.train()
+
+    if eval_data:
+        eval_results = trainer.evaluate()
+        print("\nEvaluation results:")
+        for key, value in eval_results.items():
+            print(f"{key}: {value:.4f}")
     
     # Save the final model
     model.save_pretrained(str(output_dir / "final_model"))
