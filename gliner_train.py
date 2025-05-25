@@ -5,8 +5,10 @@ from data_utils import load_data, save_data, train_val_split, GLiNERDataset
 from config import TrainingConfig
 from pathlib import Path
 import torch
+import numpy as np
 from torch.utils.data import Dataset
-from typing import List, Dict
+from typing import List, Dict, Any
+from sklearn.metrics import f1_score, precision_score, recall_score, classification_report
 
 
 
@@ -69,6 +71,50 @@ def train():
         use_cpu=config.device == "cpu",
     )
     
+    def compute_metrics(pred):
+        """Compute metrics for evaluation."""
+        labels = pred.label_ids
+        preds = pred.predictions.argmax(-1)
+        
+        # Flatten predictions and labels
+        preds_flat = preds.flatten()
+        labels_flat = labels.flatten()
+        
+        # Remove padding tokens (label = -100)
+        mask = labels_flat != -100
+        labels_flat = labels_flat[mask]
+        preds_flat = preds_flat[mask]
+        
+        # Calculate metrics
+        precision = precision_score(labels_flat, preds_flat, average='micro')
+        recall = recall_score(labels_flat, preds_flat, average='micro')
+        f1 = f1_score(labels_flat, preds_flat, average='micro')
+        
+        # Get per-class metrics
+        class_report = classification_report(
+            labels_flat, 
+            preds_flat, 
+            output_dict=True,
+            target_names=model.config.id2label.values()
+        )
+        
+        # Format metrics
+        metrics = {
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+        }
+        
+        # Add per-class metrics
+        for label, scores in class_report.items():
+            if isinstance(scores, dict):
+                metrics[f"{label}_precision"] = scores['precision']
+                metrics[f"{label}_recall"] = scores['recall']
+                metrics[f"{label}_f1"] = scores['f1-score']
+                metrics[f"{label}_support"] = scores['support']
+        
+        return metrics
+
     # Initialize Trainer
     trainer = Trainer(
         model=model,
@@ -77,6 +123,7 @@ def train():
         eval_dataset=eval_dataset,
         tokenizer=model.data_processor.transformer_tokenizer,
         data_collator=data_collator,
+        compute_metrics=compute_metrics if eval_data else None,
     )
     
     # Train the model
