@@ -9,6 +9,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from typing import List, Dict, Any
 from sklearn.metrics import f1_score, precision_score, recall_score, classification_report
+from datetime import datetime
 
 
 
@@ -49,9 +50,13 @@ def train():
     num_batches = max(1, data_size // batch_size)
     num_epochs = max(1, num_steps // num_batches)
     
+    # Use run_name from config
+    run_name = config.run_name
+    
     # Training arguments
     training_args = TrainingArguments(
-        output_dir=str(output_dir),
+        output_dir=str(output_dir / run_name),  # Save in a directory named after the run
+        run_name=run_name,  # For TensorBoard and other logging
         learning_rate=config.lr,
         weight_decay=0.01,
         others_lr=1e-5,

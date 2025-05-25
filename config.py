@@ -21,5 +21,8 @@ class TrainingConfig:
         "city",
         "postcode"
     ])
+    
+    # Run configuration
+    run_name: str = "unnamed_run"  # Custom name for this training run
 
    
