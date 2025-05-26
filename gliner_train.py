@@ -1,7 +1,7 @@
 from gliner import GLiNER
 from gliner.training import Trainer, TrainingArguments
 from gliner.data_processing.collator import DataCollator
-from data_utils import load_data, save_data, train_val_split, GLiNERDataset
+from data_utils import load_data, train_val_split, GLiNERDataset, evaluate_ner_spans
 from config import TrainingConfig
 from pathlib import Path
 import torch
@@ -11,8 +11,7 @@ from typing import List, Dict, Any
 from sklearn.metrics import f1_score, precision_score, recall_score, classification_report
 from datetime import datetime
 
-
-
+import os
 def train():
     # Load config
     config = TrainingConfig()
@@ -44,7 +43,7 @@ def train():
     eval_dataset = GLiNERDataset(eval_data, model.data_processor.transformer_tokenizer) if eval_data else None
     
     # Calculate number of epochs based on steps
-    num_steps = 1000  # You can adjust this
+    num_steps = 1000
     batch_size = config.batch_size
     data_size = len(train_dataset)
     num_batches = max(1, data_size // batch_size)
@@ -52,11 +51,13 @@ def train():
     
     # Use run_name from config
     run_name = config.run_name
+
+    run_output_dir = output_dir / run_name
     
     # Training arguments
     training_args = TrainingArguments(
-        output_dir=str(output_dir / run_name),  # Save in a directory named after the run
-        run_name=run_name,  # For TensorBoard and other logging
+        output_dir=str(run_output_dir),
+        run_name=run_name,
         learning_rate=config.lr,
         weight_decay=0.01,
         others_lr=1e-5,
@@ -69,7 +70,7 @@ def train():
         eval_strategy="steps" if eval_data else "no",
         eval_steps=100,
         save_steps=100,
-        logging_steps=50,  # Log metrics every 50 steps
+        logging_steps=50,
         report_to="tensorboard",
         save_total_limit=3,
         dataloader_num_workers=0,
@@ -134,17 +135,31 @@ def train():
     # Train the model
     trainer.train()
 
+    # Run evaluation if eval data exists
     if eval_data:
+        # Standard trainer evaluation (loss metrics)
         eval_results = trainer.evaluate()
-        print("\nEvaluation results:")
+        print("\nTrainer evaluation results:")
         for key, value in eval_results.items():
             print(f"{key}: {value:.4f}")
+        
+        # NER-specific evaluation
+        print("\nRunning NER evaluation...")
+        try:
+            ner_results = evaluate_ner_spans(model, eval_data)
+            
+            # Optionally save evaluation results
+            import json
+            with open(run_output_dir / "ner_evaluation_results.json", 'w') as f:
+                json.dump(ner_results, f, indent=2)
+                
+        except Exception as e:
+            print(f"Error in NER evaluation: {e}")
     
     # Save the final model
-    model.save_pretrained(str(output_dir / "final_model"))
-    print(f"Training complete! Model saved to {output_dir / 'final_model'}")
+    model.save_pretrained(str(run_output_dir / "final_model"))
+    print(f"\nTraining complete! Model saved to {run_output_dir / 'final_model'}")
 
 if __name__ == "__main__":
-    import os
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
     train()

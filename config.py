@@ -16,6 +16,8 @@ class TrainingConfig:
     entity_types: List[str] = field(default_factory = lambda: [
         "building_name",
         "street_name",
+        "street_number"
+        "filter_type"
         "unit_id",
         "unit_type",
         "city",
@@ -25,4 +27,3 @@ class TrainingConfig:
     # Run configuration
     run_name: str = "unnamed_run"  # Custom name for this training run
 
-   
