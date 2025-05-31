@@ -159,7 +159,7 @@ def find_span_positions(text: str, span_text: str) -> tuple:
 
 def preprocess_training_data(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Preprocess training data by transforming text and updating entity span positions.
+    Preprocess json training data by transforming text and updating entity span positions.
     
     Applies text preprocessing to both the main text and entity spans, then recalculates
     span positions in the transformed text. This ensures that entity annotations remain

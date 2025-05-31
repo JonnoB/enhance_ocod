@@ -6,13 +6,43 @@ import pandas as pd
 from torch.utils.data import Dataset
 from nervaluate import Evaluator
 import re
+from pre_processing_funcs import preprocess_training_data
+import os
 
 def load_data(file_path: str, max_samples: int = None) -> List[Dict]:
-    """Load data from JSON file in GLiNER format."""
-    with open(file_path, 'r') as f:
-        data = json.load(f)
+    """
+    Load data with preprocessing support.
+    
+    Automatically generates preprocessed path by adding 'preprocessed_data' folder.
+    If preprocessed file exists, load it.
+    Otherwise, load raw data, preprocess it, save it, then return it.
+    """
+    
+    # Generate preprocessed path
+    path = Path(file_path)
+    preprocessed_path = path.parent / "preprocessed_data" / path.name
+    
+    if preprocessed_path.exists():
+        print(preprocessed_path)
+        print('Loading pre-processed data')
+        with open(preprocessed_path, 'r') as f:
+            data = json.load(f)
+    else:
+        # Load raw data
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        print("pre-processing data")
+        # Preprocess the data
+        data = preprocess_training_data(data)
+        print("pre-processing data complete")
+        # Create directory if it doesn't exist
+        preprocessed_path.parent.mkdir(parents=True, exist_ok=True)
         
-    # If max_samples is specified, limit the number of samples
+        # Save preprocessed data
+        with open(preprocessed_path, 'w') as f:
+            json.dump(data, f)
+    
+    # Apply max_samples limit if specified
     if max_samples:
         data = data[:max_samples]
         

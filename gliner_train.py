@@ -30,6 +30,14 @@ def train():
     
     # Initialize model
     model = GLiNER.from_pretrained(config.model_name)
+
+    id2label = {i: label for i, label in enumerate(config.entity_types)}
+    label2id = {label: i for i, label in enumerate(config.entity_types)}
+
+    # Update model config
+    model.config.id2label = id2label
+    model.config.label2id = label2id
+    model.config.num_labels = len(config.entity_types)
     
     # Initialize data collator
     data_collator = DataCollator(
