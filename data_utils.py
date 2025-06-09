@@ -1,3 +1,8 @@
+"""""""""
+Most of this or indeed the entire file should be deleted now we are not using Gliner
+
+"""""""""""
+
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Iterator
