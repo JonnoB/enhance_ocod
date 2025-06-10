@@ -3,14 +3,8 @@ import pandas as pd
 import re
 import numpy as np
 import time
-import spacy
-#These are to modify the tokenization process
-from spacy.lang.char_classes import LIST_ELLIPSES
-from spacy.lang.char_classes import LIST_ICONS, HYPHENS
-from spacy.lang.char_classes import CONCAT_QUOTES, ALPHA_LOWER, ALPHA_UPPER, ALPHA
-from spacy.util import compile_infix_regex
-
-
+import zipfile
+from typing import Optional, List, Callable
 #This  module is supposed to contain all the relevant functions for parsing the LabeledS json file 
 
 ##
@@ -124,71 +118,6 @@ def load_data_with_overlaps_jonno(file_path):
     
     return all_entities
 
-def remove_overlaps_harry(
-    spans: pd.DataFrame, groupby="datapoint_id", start="start", end="end"
-):
-    """
-    This function was made by Harry from Humanloop to deal with the overlaps problem
-    Removes rows from a DataFrame where start:end overlap.
-
-    Attempts to keep the longer of the overlapping spans.
-    """
-    spans_to_remove = []
-    for datapoint_id, datapoint_spans in spans.groupby(groupby):
-        intervals = datapoint_spans.apply(
-            lambda x: pd.Interval(left=getattr(x, start), right=getattr(x, end)), axis=1
-        )
-        for i, (index_a, interval_a) in enumerate(intervals.iteritems()):
-            for j, (index_b, interval_b) in enumerate(
-                intervals.iloc[i + 1 :].iteritems()
-            ):
-                if interval_a.overlaps(interval_b):
-                    # print(i, j, index_a, index_b, interval_a, interval_b)
-                    # Overlapping ground truths at index_a and index_b.
-                    # Keep only longer of the two.
-                    if interval_a.length >= interval_b.length:
-                        spans_to_remove.append(index_b)
-                    else:
-                        spans_to_remove.append(index_a)
-
-    return spans[~spans.index.isin(spans_to_remove)]
-
-
-def load_data_with_overlaps_harry(file_path):
-    
-    """
-    This is Harry from HUmanloop's of the overlap removal.
-    This function only needs to be used if denoising process has not been used
-    """
-
-    with open(file_path, "r") as f:
-        data = json.load(f)
-
-    df = pd.json_normalize(
-        data["datapoints"],
-        # record_path=["programmatic", "aggregateResults"],
-        record_path=["programmatic", "results"],
-        meta=["data", "id"],
-        record_prefix="result_stuff.",
-        meta_prefix="data_stuff.",
-        errors="ignore",
-    )
-    df["full_text"] = df["data_stuff.data"].map(lambda x: x["text"])
-
-    df = all_entities.copy()
-
-
-
-    new_df = remove_overlaps_harry(
-        df, groupby="data_stuff.id", start="result_stuff.start", end="result_stuff.end"
-    )
-
-    all_entities = all_entities.sort_values(['datapoint_id', 'start'])
-
-    all_entities.reset_index(drop = True, inplace = True)
-    
-    return new_df
-
 def expand_multi_id(multi_id_string):
     #the function takes a string that is in the form '\d+(\s)?(-|to)(\s)?\d+'
     #and outputs a continguous list of numbers between the two numbers in the string
@@ -214,6 +143,11 @@ def filter_contiguous_numbers(number_list, number_filter):
     
 def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1):
     #cycles through the dataframe and and expands xx-to-yy formats printing every ith iteration
+    
+    # Handle empty dataframe case
+    if df2.shape[0] == 0:
+        return df2
+    
     temp_list = []
     expand_time = 0
     filter_time = 0
@@ -385,15 +319,20 @@ def backfill_address_labels(df):
     Also I don't think this is a very good way of doing it at all.
     """
     
-    df['number_filter'] = df[['datapoint_id','number_filter']].groupby('datapoint_id').fillna(method ='bfill')
-    df['building_name'] = df[['datapoint_id','building_name']].groupby('datapoint_id').fillna(method ='bfill')
-    df['street_number'] = df[['datapoint_id','street_number']].groupby('datapoint_id').fillna(method ='bfill')
-    df['postcode'] = df[['datapoint_id','postcode']].groupby('datapoint_id').fillna(method ='bfill')
-    df['street_name'] = df[['datapoint_id','street_name']].groupby('datapoint_id').fillna(method ='bfill')
-    df['number_filter'] = df[['datapoint_id','number_filter']].groupby('datapoint_id').fillna(method ='bfill')
-    df['city'] = df[['datapoint_id','city']].groupby('datapoint_id').fillna(method ='bfill')
-    #should this will backwards or forwards? as mostly it is flat xx not xx flat?
-    df['unit_type'] = df[['datapoint_id','unit_type']].groupby('datapoint_id').fillna(method ='ffill') 
+    # Define column groups for different fill strategies
+    backfill_columns = ['number_filter', 'building_name', 'street_number', 
+                       'postcode', 'street_name', 'city']
+    forward_fill_columns = ['unit_type']
+    
+    # Vectorized backfill - more efficient than loops
+    for col in backfill_columns:
+        if col in df.columns:
+            df[col] = df.groupby('datapoint_id')[col].transform(lambda x: x.bfill())
+    
+    # Vectorized forward fill
+    for col in forward_fill_columns:
+        if col in df.columns:
+            df[col] = df.groupby('datapoint_id')[col].transform(lambda x: x.ffill())
     
     return df
 
@@ -443,36 +382,116 @@ def final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_m
    
     return full_expanded_data
 
-def parsing_and_expansion_process(all_entities, expand_addresses = False ):
+def parsing_and_expansion_process(
+    all_entities: pd.DataFrame, 
+    expand_addresses: bool = False, 
+    required_columns: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """
+    Process address data through parsing and expansion pipeline.
     
+    Combines address identification, label spreading, column validation,
+    backfilling, and final address generation into a single workflow.
+    
+    Parameters
+    ----------
+    all_entities : pd.DataFrame
+        Input dataframe containing raw address data
+    expand_addresses : bool, default False
+        If True, expands addresses into multiple records
+    required_columns : list of str, optional
+        Required output columns. Uses standard address columns if None
+        
+    Returns
+    -------
+    pd.DataFrame
+        Processed dataframe with parsed addresses and required columns
     """
-    This function is more syntactic sugar to provide a simple interface for the expansion and parsing pipeline
-    It takes a pandas dataframe that has been produced by one of the loading functions that is "load_cleaned_labels" or "load_data_with_overlaps_jonno"
-    It also takes a logical depending on whether expanding the addresses is desired or not
-    """
-    #This regex is used in several places and is kept here as it was originally used in the function below.
-    #xx_to_yy_regex = r'^\d+\s?(?:-|to)\s?\d+$'
+    
+    # Define default required columns
+    if required_columns is None:
+        required_columns = [
+            "building_name",
+            "street_name", 
+            "street_number",
+            "filter_type",
+            "unit_id",
+            "unit_type",
+            "city",
+            "postcode"
+        ]
+
+    
+    # Continue with existing logic
     multi_unit_id, multi_property, all_multi_ids = identify_multi_addresses(all_entities)
     df = spread_address_labels(all_entities, all_multi_ids)
 
-    #Blockers prevent the filling of wrong information. As an example if a building is going to back fill up 
-    #previous addresses it should not back fill past another street as this is highly unlikely to be the same building
+    df = ensure_required_columns(df, required_columns)
+
+    df.rename(columns = {'filter_type':'number_filter'}, inplace = True)
+
+    # Blockers prevent the filling of wrong information. As an example if a building is going to back fill up 
+    # previous addresses it should not back fill past another street as this is highly unlikely to be the same building
     df = add_backfill_blockers(df)
     df = backfill_address_labels(df)
 
-    out = final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_multi_ids, expand_addresses = expand_addresses)
+    df = final_parsed_addresses(df, all_entities, multi_property, multi_unit_id, all_multi_ids, expand_addresses=expand_addresses)
     
-    return out
+    return df
 
-import re
-import pandas as pd
 
-def load_and_prep_OCOD_data(file_path):
+
+def load_csv_from_zip(zip_path: str, 
+                     csv_filename: Optional[str] = None,
+                     usecols: Optional[List[str]] = None,
+                     usecols_callable: Optional[Callable] = None,
+                     encoding_errors: str = 'ignore') -> pd.DataFrame:
+    """
+    Load CSV from zip file with column filtering support
+    
+    Args:
+        zip_path: Path to the ZIP file
+        csv_filename: Optional specific CSV filename to load
+        usecols: List of column names to load
+        usecols_callable: Callable function to filter columns (like lambda)
+        encoding_errors: How to handle encoding errors
+        
+    Returns:
+        pd.DataFrame: Loaded dataframe with specified columns
+    """
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+        
+        if not csv_files:
+            raise ValueError("No CSV files found in zip")
+        
+        if csv_filename:
+            if csv_filename not in csv_files:
+                raise ValueError(f"CSV file '{csv_filename}' not found in zip. Available: {csv_files}")
+            target_file = csv_filename
+        else:
+            target_file = csv_files[0]
+        
+        with zip_ref.open(target_file) as csv_file:
+            # Build pandas read_csv arguments
+            read_csv_kwargs = {'encoding_errors': encoding_errors}
+            
+            if usecols is not None:
+                read_csv_kwargs['usecols'] = usecols
+            elif usecols_callable is not None:
+                read_csv_kwargs['usecols'] = usecols_callable
+            
+            df = pd.read_csv(csv_file, **read_csv_kwargs)
+    
+    return df
+
+def load_and_prep_OCOD_data(file_path, csv_filename=None):
     """
     Load and preprocess OCOD dataset for address parsing.
     
     Args:
-        file_path: Path to the OCOD CSV file
+        file_path: Path to the OCOD CSV file or ZIP file containing CSV
+        csv_filename: Optional specific CSV filename if loading from ZIP
         
     Returns:
         pd.DataFrame: Processed OCOD data with normalized addresses
@@ -481,6 +500,10 @@ def load_and_prep_OCOD_data(file_path):
     # Define columns to keep upfront to avoid loading unnecessary data
     KEEP_COLUMNS = ['title_number', 'tenure', 'district', 'county',
                     'region', 'price_paid', 'property_address']
+    
+    # Column filter function (same logic for both CSV and ZIP)
+    def column_filter(x):
+        return x.lower().replace(" ", "_") in KEEP_COLUMNS
     
     # pre-processing regex patterns for better tokenisation
     REGEX_PATTERNS = [
@@ -496,24 +519,57 @@ def load_and_prep_OCOD_data(file_path):
         (r'(\d+)\s*-\s*(\d+)', r'\1-\2'),
     ]
     
-    
     try:
-        # Load only required columns if possible
-        ocod_data = pd.read_csv(
-            file_path,
-            usecols=lambda x: x.lower().replace(" ", "_") in KEEP_COLUMNS,
-            encoding_errors='ignore'
-        ).rename(columns=lambda x: x.lower().replace(" ", "_"))
-    except ValueError:
-        # Fallback if column names don't match expected format
-        ocod_data = pd.read_csv(
-            file_path,
-            encoding_errors='ignore'
-        ).rename(columns=lambda x: x.lower().replace(" ", "_"))
-        ocod_data = ocod_data[KEEP_COLUMNS]
+        # Check if file is a ZIP file
+        if file_path.lower().endswith('.zip'):
+            # Load from ZIP file with column filtering
+            try:
+                ocod_data = load_csv_from_zip(
+                    zip_path=file_path,
+                    csv_filename=csv_filename,
+                    usecols_callable=column_filter,
+                    encoding_errors='ignore'
+                )
+            except ValueError:
+                # Fallback: load all columns then filter
+                ocod_data = load_csv_from_zip(
+                    zip_path=file_path,
+                    csv_filename=csv_filename,
+                    encoding_errors='ignore'
+                )
+                ocod_data = ocod_data.rename(columns=lambda x: x.lower().replace(" ", "_"))
+                available_columns = [col for col in KEEP_COLUMNS if col in ocod_data.columns]
+                ocod_data = ocod_data[available_columns]
+        else:
+            # Load from regular CSV file
+            try:
+                # Load only required columns if possible
+                ocod_data = pd.read_csv(
+                    file_path,
+                    usecols=column_filter,
+                    encoding_errors='ignore'
+                )
+            except ValueError:
+                # Fallback if column names don't match expected format
+                ocod_data = pd.read_csv(
+                    file_path,
+                    encoding_errors='ignore'
+                )
+                ocod_data = ocod_data.rename(columns=lambda x: x.lower().replace(" ", "_"))
+                available_columns = [col for col in KEEP_COLUMNS if col in ocod_data.columns]
+                ocod_data = ocod_data[available_columns]
+        
+        # Normalize column names (in case usecols worked and we skipped this step)
+        ocod_data = ocod_data.rename(columns=lambda x: x.lower().replace(" ", "_"))
+    
+    except Exception as e:
+        raise ValueError(f"Error loading data from {file_path}: {str(e)}")
     
     # Remove rows with empty addresses
-    ocod_data = ocod_data.dropna(subset='property_address')
+    if 'property_address' in ocod_data.columns:
+        ocod_data = ocod_data.dropna(subset='property_address')
+    else:
+        raise ValueError("'property_address' column not found in the data")
     
     ocod_data.reset_index(drop=True, inplace=True)
     
@@ -561,62 +617,33 @@ def post_process_expanded_data(expanded_data, ocod_data):
     return full_expanded_data
 
 
-def spacy_pred_fn(spacy_model_path, ocod_data):
-
+def ensure_required_columns(df, required_columns, fill_value=None):
     """
-    This function predicts over the OCOD dataframe using a spacy model from the path arguement.
-    THe function is designed to be used with the CPU model but can be used with GPU. 
-    However, currently due to issues with the CUDA drivers I am only using CPU
-    """
-    print('Loading the spaCy model')
-    nlp1 = spacy.load(spacy_model_path) 
-    #Tokenization needs to be customised to take account of the foibles of the data. I have added a couple of additional splitting criteria
-    infixes = (
-    LIST_ELLIPSES
-    + LIST_ICONS
-    + [
-        r"(?<=[0-9])[+\-\,*^\(\)](?=[0-9-])",
-        r"(?<=[{al}{q}])\.(?=[{au}{q}])".format(
-            al=ALPHA_LOWER, au=ALPHA_UPPER, q=CONCAT_QUOTES
-        ),
-        r"(?<=[{a}]),(?=[{a}])".format(a=ALPHA),
-        r"(?<=[{a}])(?:{h})(?=[{a}])".format(a=ALPHA, h=HYPHENS),
-        r"(?<=[{a}0-9])[:<>=/\(\)](?=[{a}])".format(a=ALPHA),
-        r"(?<=[{a}])[:<>=/\(\)](?=[{a}0-9])".format(a=ALPHA), #I added this one in to try and break things like "(odd)33-45"
-    ]   
-    )
-
-    infix_re = compile_infix_regex(infixes)
-    nlp1.tokenizer.infix_finditer = infix_re.finditer
-
-    print('Adding the datapoint id and title number meta data to the property address')
-    ocod_context = [(ocod_data.loc[x,'property_address'], {'datapoint_id':x, 'title_number':str(ocod_data.title_number[x])}) for x in range(0,ocod_data.shape[0])]
-    i = 0
-    all_entities_json = []    
-    print('predicting over the OCOD dataset using the pre-trained spaCy model')    
-    for doc, context in list(nlp1.pipe(ocod_context, as_tuples = True)):
-
-        #This doesn't print as it is a stream not a conventional loop
-        #if i%print_every==0: print("doc ", i, " of "+ str(ocod_data.shape[0]))
-        #i = i+1
-
-        temp = doc.to_json()
-        temp.pop('tokens')
-        """
-        i = 0
-        #add the actual entity text to the json
-        for entity in doc.ents:
-            temp['ents'][i]['label_text'] = entity
-            i = i+1
-        """
-
-        temp.update({'datapoint_id':context['datapoint_id']})
-        all_entities_json = all_entities_json + [temp]
-
-    all_entities = pd.json_normalize(all_entities_json, record_path = "ents", meta= ['text', 'datapoint_id'])
-    print('extracting entity label text')
-    all_entities['label_text'] = [all_entities.text[x][all_entities.start[x]:all_entities.end[x]] for x in range(0,all_entities.shape[0])]
+    Ensure that the dataframe has all required columns.
     
-    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label']).cumcount()
-    print('Names Entity Recognition labelling complete')
-    return all_entities
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        Input dataframe
+    required_columns : list
+        List of column names that must exist
+    fill_value : any, default None
+        Value to use for missing columns
+        
+    Returns:
+    --------
+    pandas.DataFrame
+        DataFrame with all required columns
+    """
+    
+    missing_columns = []
+    
+    for col in required_columns:
+        if col not in df.columns:
+            df[col] = fill_value
+            missing_columns.append(col)
+    
+    if missing_columns:
+        print(f"Added missing columns: {missing_columns}")
+    
+    return df

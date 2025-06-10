@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 from datasets import Dataset
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Callable
 import numpy as np
+from tqdm import tqdm
 
 class AddressParserInference:
     def __init__(self, model_path: str, device: Optional[str] = None):
@@ -177,43 +178,18 @@ class AddressParserInference:
         
         return grouped
 
-
-def load_csv_from_zip(zip_path: str, csv_filename: Optional[str] = None) -> pd.DataFrame:
-    """Load CSV from zip file"""
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
-        
-        if not csv_files:
-            raise ValueError("No CSV files found in zip")
-        
-        if csv_filename:
-            if csv_filename not in csv_files:
-                raise ValueError(f"CSV file '{csv_filename}' not found in zip. Available: {csv_files}")
-            target_file = csv_filename
-        else:
-            target_file = csv_files[0]
-        
-        with zip_ref.open(target_file) as csv_file:
-            df = pd.read_csv(csv_file)
-    
-    return df
-
-
-
 def parse_addresses_from_csv(
+    df: pd.DataFrame,
     model_path: str,
-    csv_path: str,
     target_column: str = "address",
     index_column: Optional[str] = None,
     csv_filename: Optional[str] = None,
     batch_size: int = 64
 ) -> Dict:
     """
-    Ultra-fast version that processes everything in one go (for datasets that fit in memory)
     
     Args:
         model_path: Path to trained model
-        csv_path: Path to CSV file or zip file containing CSV
         target_column: Column name containing addresses
         index_column: Column to use as index (if None, uses pandas index)
         csv_filename: If csv_path is zip, specific CSV file to use
@@ -224,14 +200,6 @@ def parse_addresses_from_csv(
     """
     # Initialize inference
     parser = AddressParserInference(model_path)
-    
-    # Load data
-    if csv_path.endswith('.zip'):
-        df = load_csv_from_zip(csv_path, csv_filename)
-        print(f"Loaded CSV from zip: {csv_path}")
-    else:
-        df = pd.read_csv(csv_path)
-        print(f"Loaded CSV: {csv_path}")
     
     # Check if target column exists
     if target_column not in df.columns:
@@ -252,12 +220,12 @@ def parse_addresses_from_csv(
     
     all_results = []
     
-    # Process in batches
-    for i in range(0, len(addresses), batch_size):
+    # Process in batches with tqdm progress bar
+    batch_ranges = list(range(0, len(addresses), batch_size))
+    
+    for i in tqdm(batch_ranges, desc="Processing batches", unit="batch"):
         batch_addresses = addresses[i:i+batch_size]
         batch_indices = indices[i:i+batch_size]
-        
-        print(f"Processing batch {i//batch_size + 1}/{(len(addresses) + batch_size - 1)//batch_size}")
         
         # Tokenize batch
         inputs = parser.tokenizer(
@@ -314,7 +282,6 @@ def parse_addresses_from_csv(
 
 
 
-
 def convert_to_entity_dataframe(modernbert_results: Dict, batch_size: int = 50000) -> pd.DataFrame:
     """
     Converts ModernBERT parsing results to a structured entity DataFrame
@@ -355,7 +322,7 @@ def convert_to_entity_dataframe(modernbert_results: Dict, batch_size: int = 5000
         entity_count = len(entities)
         if entity_count > 0:
             datapoint_ids.extend([datapoint_id] * entity_count)
-            labels.extend([entity['label'] for entity in entities])
+            labels.extend([entity['type'] for entity in entities])
             starts.extend([entity['start'] for entity in entities])
             ends.extend([entity['end'] for entity in entities])
             texts.extend([original_address] * entity_count)

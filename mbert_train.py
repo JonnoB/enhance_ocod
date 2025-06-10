@@ -18,7 +18,7 @@ num_train_epochs = 6
 batch_size = 16
 learning_rate = 5e-5
 max_length  = 128
-output_dir = "models/address_parser2"
+output_dir = "models/address_parser"
 entity_types = [
     "building_name",
     "street_name",
