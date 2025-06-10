@@ -315,27 +315,71 @@ def parse_addresses_from_csv(
 
 
 
-
-def example_mega_fast_csv_parsing():
-    """Example of ultra-fast CSV parsing"""
-    model_path = "models/address_parser2/checkpoint-750"
-    csv_path = "data/ocod_history/OCOD_FULL_2015_10.zip"
+def convert_to_entity_dataframe(modernbert_results: Dict, batch_size: int = 50000) -> pd.DataFrame:
+    """
+    Converts ModernBERT parsing results to a structured entity DataFrame
+    Optimized for large datasets (hundreds of thousands of entities)
     
-    import time
-    start_time = time.time()
+    Args:
+        modernbert_results: Dictionary output from parse_addresses_from_csv
+        
+    Returns:
+        pandas DataFrame with structured entity data
+    """
     
-    results = parse_addresses_from_csv(
-        model_path=model_path,
-        csv_path=csv_path,
-        target_column="Property_Address",
-        batch_size=2048
-    )
+    # Pre-calculate total entities for memory allocation
+    total_entities = sum(len(result["entities"]) for result in modernbert_results["results"])
     
-    end_time = time.time()
+    if total_entities == 0:
+        return pd.DataFrame(columns=['datapoint_id', 'label', 'start', 'end', 'text', 'label_text', 'label_id_count'])
     
-    print(f"Mega-fast CSV Parsing completed in {end_time - start_time:.2f} seconds")
-    print("Results summary:")
-    print(json.dumps(results["summary"], indent=2))
+    print(f'Processing {total_entities:,} entities...')
     
-    return results
-
+    # Pre-allocate arrays for better performance
+    datapoint_ids = []
+    labels = []
+    starts = []
+    ends = []
+    texts = []
+    label_texts = []
+    
+    # Batch process to avoid memory issues
+    processed = 0
+    
+    for result in modernbert_results["results"]:
+        datapoint_id = result["row_index"]
+        original_address = result["original_address"]
+        entities = result["entities"]
+        
+        # Batch append for efficiency
+        entity_count = len(entities)
+        if entity_count > 0:
+            datapoint_ids.extend([datapoint_id] * entity_count)
+            labels.extend([entity['label'] for entity in entities])
+            starts.extend([entity['start'] for entity in entities])
+            ends.extend([entity['end'] for entity in entities])
+            texts.extend([original_address] * entity_count)
+            label_texts.extend([entity['text'] for entity in entities])
+            
+            processed += entity_count
+            if processed % batch_size == 0:
+                print(f'Processed {processed:,}/{total_entities:,} entities')
+    
+    # Create DataFrame directly from arrays (much faster than list of dicts)
+    all_entities = pd.DataFrame({
+        'datapoint_id': datapoint_ids,
+        'label': labels,
+        'start': starts,
+        'end': ends,
+        'text': texts,
+        'label_text': label_texts
+    })
+    
+    print('Computing label counts...')
+    # Optimize the groupby operation
+    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label'], sort=False).cumcount()
+    
+    print('Named Entity Recognition labelling complete')
+    print(f'Total entities extracted: {len(all_entities):,}')
+    
+    return all_entities
