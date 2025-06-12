@@ -426,7 +426,10 @@ def parsing_and_expansion_process(
     multi_unit_id, multi_property, all_multi_ids = identify_multi_addresses(all_entities)
     df = spread_address_labels(all_entities, all_multi_ids)
 
-    df = ensure_required_columns(df, required_columns)
+    # The columns are filled with an empty string as at the moment all columns should be strings
+    # Ensurinng string prevents errors later when cleaning is performed on street_name and other variables
+    # This is not being changed to default behaviour as I may need to implement more significant changes later
+    df = ensure_required_columns(df, required_columns, "")
 
     df.rename(columns = {'filter_type':'number_filter'}, inplace = True)
 

@@ -59,7 +59,7 @@ In order to re-create or update the Enhanced OCOD dataset several opensource dat
 |-----------------------------------------------------------------------------------------------------|----------------------------|--------|------------------|
 | [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )\*| OCOD.csv                   | csv    | [Yes](https://use-land-property-data.service.gov.uk/api-information)              |
 | [ONSPD](https://open-geography-portalx-ons.hub.arcgis.com/datasets/ons::ons-postcode-directory-february-2025-for-the-uk/about)\*\*                                         | ONSPD.zip                  | zip    | [Yes](https://www.api.gov.uk/ons/open-geography-portal/#open-geography-portal)              |
-| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\*\* | price_paid_files           | folder | No              |
+| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\*\* | price_paid_files           | folder | [No](https://landregistry.data.gov.uk/app/doc/ppd/)              |
 | [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*\*                  | VOA_ratings.csv            | csv    | [Yes](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)              |
 
 Note:
@@ -69,7 +69,9 @@ Note:
 \*\* Only folder name of the ONSPD zip needs to be changed the data inside doesn't. The script searches for the correct file inside. The ONSPD file can be fiddly to find, as there are a lot of files with ONSPD in the name try searching "ONSPD" followed by the year e.g. "ONSPD 2025".
 Future versions of the script may make it more flexible with regards file names.
 
-\*\*\* The price paid dataset should be downloaded as yearly files and places inside a folder called 'price_paid_files'. It is advisable to download several years. The paper used 2017-2021. Having more years increases the chances of being able to fill in missing information in OCOD, however after a few years the benefits reduce and the memory costs become high.
+\*\*\* The price paid dataset can be downloaded as the entire dataset or as individual years (which ever years are appropriate for the analysis), the data is pre-processed and saved in a folder by year, this substantially speeds up later stages of the pipeline. Overall downloading the whole dataset is probably the best option. 
+
+There is a SPARQL database for programmatically downloading price paid data, it is slow and overall a better option is to manually download the csv's an work with those.
 
 \*\*\*\* There are several files in the dataset. The one with a name similar to 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
 
@@ -109,7 +111,6 @@ The next thing I need to do is either download the spacy model or retrain it on 
 
 - The big change is rebuilding the test dataset and the in a more straight forward way not using the programmatic approach and also probably not SpaCy
 - Changing model to HF means it can be easily downloaded into the program which would be super helpful instead of storing the SpaCy weights
-- Review and probably remove the human loop parts.Possibly switch to
 - Review training data, see how modern LLM's can parse the data, use them to create larger training corpus
 - set up lightning evironment and test current method works
 - perform memory and speed profiling on the process, or different sections of it, what optimisations would speed things up?
@@ -118,4 +119,3 @@ The next thing I need to do is either download the spacy model or retrain it on 
 - tests!
 - convert to python library
 - make pypi installable
-- remove post-codes from saved data

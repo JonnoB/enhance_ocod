@@ -80,24 +80,58 @@ def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1
 
     return out
 
-def load_postocde_district_lookup(file_path, target_post_area ):
+
+def load_postcode_district_lookup(file_path, target_post_area=None):
     """
-    Loads the ONS postcode the district look up table aka the ONSPD reduces it to only the relevant columns to save memeory
+    Load the ONS postcode district lookup table from a ZIP file.
+
+    Loads the ONSPD (Office for National Statistics Postcode Directory) and reduces 
+    it to relevant columns to save memory. Filters for English and Welsh postcodes.
+
+    Args:
+        file_path (str): Path to the ZIP file containing the ONSPD data.
+        target_post_area (str, optional): Specific CSV file within the ZIP to load. 
+            If None, automatically finds the appropriate file.
+
+    Returns:
+        pd.DataFrame: Processed postcode district lookup table with selected columns.
     """
-    
     with zipfile.ZipFile(file_path) as zf:
-        with io.TextIOWrapper(zf.open(target_post_area), encoding = 'latin-1') as f:
-            postcode_district_lookup = pd.read_csv(f)[['pcds','oslaua','oa11','lsoa11', 'msoa11', 'ctry']]
-            postcode_district_lookup = postcode_district_lookup[(postcode_district_lookup['ctry'] == 'E92000001') | (postcode_district_lookup['ctry'] == 'W92000004')]
-            postcode_district_lookup.rename(columns = {'pcds':'postcode2',
-                                                  'oslaua':'lad11cd',
-                                                   'oa11':'oa11cd',
-                                                  'lsoa11': 'lsoa11cd',
-                                                  'msoa11':'msoa11cd'}, inplace = True)
-            #spaces are removed because I don't know if the formatting is the same in the two datasets
-            postcode_district_lookup['postcode2']= postcode_district_lookup['postcode2'].str.lower().str.replace(r"\s", r"", regex = True)
-            postcode_district_lookup.drop('ctry',  axis =1, inplace = True)
+        # If no target file specified, find it automatically
+        if target_post_area is None:
+            target_post_area = [
+                i for i in zf.namelist() 
+                if re.search(r'^Data/ONSPD.+csv$', i)
+            ][0]
+
+        with io.TextIOWrapper(zf.open(target_post_area), encoding='latin-1') as f:
+            postcode_district_lookup = pd.read_csv(f)[['pcds', 'oslaua', 'oa11', 'lsoa11', 'msoa11', 'ctry']]
             
+            # Filter for English and Welsh postcodes
+            postcode_district_lookup = postcode_district_lookup[
+                (postcode_district_lookup['ctry'] == 'E92000001') | 
+                (postcode_district_lookup['ctry'] == 'W92000004')
+            ]
+            
+            # Rename columns
+            postcode_district_lookup.rename(columns={
+                'pcds': 'postcode2',
+                'oslaua': 'lad11cd',
+                'oa11': 'oa11cd',
+                'lsoa11': 'lsoa11cd',
+                'msoa11': 'msoa11cd'
+            }, inplace=True)
+            
+            # Remove spaces from postcodes
+            postcode_district_lookup['postcode2'] = (
+                postcode_district_lookup['postcode2']
+                .str.lower()
+                .str.replace(r"\s", r"", regex=True)
+            )
+            
+            # Drop country column
+            postcode_district_lookup.drop('ctry', axis=1, inplace=True)
+    
     return postcode_district_lookup
 
 def preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup):
@@ -122,41 +156,6 @@ def preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup):
     
     return ocod_data
 
-def load_and_process_pricepaid_data(file_path, postcode_district_lookup):
-    """
-    does what it says on the tin
-    """
-    #https://www.gov.uk/guidance/about-the-price-paid-data#explanations-of-column-headers-in-the-ppd
-    price_paid_headers = ['Transaction unique identifier', 'Price', 'Date of Transfer', 'Postcode', 'Property Type', 
-                     'Old New', 'Duration', 'PAON', 'SAON', 'Street',  'Locality', 'Town', 'District', 'County',
-                     'PPD Category Type', 'Record Status - monthly file only']
-    #clean up to make working with them easier
-    price_paid_headers = [x.lower().replace(' ', '_') for x in price_paid_headers]
-
-    ##
-    ## Here we add in the lsoa11cd msoa11cd and lad11cd using postcode
-    ##
-
-    #price_paid_df = pd.read_csv('/tf/empty_homes_data/price_paid_files/pp-2021.csv', names = price_paid_headers)
-    price_paid_df = pd.concat([ pd.read_csv(file_path+x, names = price_paid_headers) for x in os.listdir(file_path)])
-
-    price_paid_df['street'] = price_paid_df['street'].str.lower()
-
-    price_paid_df['street_name2'] = price_paid_df.loc[:,'street'].str.replace(r"'", "", regex = True).\
-        str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
-
-    price_paid_df['locality'] = price_paid_df['locality'].str.lower()
-    price_paid_df['paon'] = price_paid_df['paon'].str.lower()
-
-    price_paid_df = clean_street_numbers(price_paid_df, original_column = 'paon')
-
-    price_paid_df['postcode2'] = price_paid_df['postcode'].str.lower().str.replace(r"\s", r"", regex=True)
-
-    #Removing unneccessary columns to save memory
-    price_paid_df = price_paid_df.merge(postcode_district_lookup, 'left', left_on = "postcode2", right_on = "postcode2").loc[:,
-    ['street_name2', 'street_number','postcode2', 'district','paon', 'lad11cd', 'oa11cd', 'lsoa11cd', 'msoa11cd']]
-    
-    return price_paid_df
 
 def add_missing_lads_ocod(ocod_data, price_paid_df):
     
@@ -189,38 +188,44 @@ def add_missing_lads_ocod(ocod_data, price_paid_df):
     return ocod_data
 
 
-def clean_street_numbers(df, original_column = 'number_or_name'):
-    #This function is primarily designed to clean the street numbers of the voa dataset
+def clean_street_numbers(df, original_column='number_or_name'):
+    """
+    
+    """
 
-    temp = df
-        #remove anything in brackets
-    temp['street_number'] = temp[original_column].str.replace(r"\(.+\)", "", regex = True, case = False)
-    #there are a few + sy,bols used mostly in relation to westfield shopping centeres these are replaced with space
-    temp['street_number'] = temp['street_number'].str.replace("+", r" ", regex = True, case = False)
+    # Remove anything in brackets
+    df['street_number'] = df[original_column].str.replace(r"\(.+\)", "", regex=True, case=False)
     
-    #     #units often slip in as street numbers, this kills them off
-    temp.loc[temp['street_number'].str.contains(r"unit|suite|room", regex = True, case = False)==True, 'street_number'] = np.nan
+    # Replace + symbols with space
+    df['street_number'] = df['street_number'].str.replace(r"\+", " ", regex=True, case=False)
     
-    #     #replace @ and & with words
-    temp['street_number'] = temp['street_number'].str.replace(r"@", " at ", regex = True, case = False).str.replace(r"&", " and ", regex = True, case = False)
+    # Remove units/suite/room entries
+    df.loc[df['street_number'].str.contains(r"unit|suite|room", regex=True, case=False, na=False), 'street_number'] = np.nan
     
-    #     #replace "-" with spaces with a simple "-"
-    temp['street_number'] = temp['street_number'].str.replace(r"(\s)?-(\s)?", "-", regex = True, case = False)
+    # Replace @ and & with words
+    df['street_number'] = df['street_number'].str.replace(r"@", " at ", regex=True, case=False)
+    df['street_number'] = df['street_number'].str.replace(r"&", " and ", regex=True, case=False)
     
-    #     #take only things after the last space includes cases where there is no space. Then remove all letters
-    temp['street_number'] = temp['street_number'].str.extract(r"([^\s]+$)")[0].str.replace(r"([a-z]+)", "", regex = True, case = False)
-    #     #remove dangling hyphens and slashes
-    temp['street_number'] = temp['street_number'].str.replace(r"(-$)|(^-)|\\|\/", "", regex = True, case = False)
-    temp['street_number'] = temp['street_number'].str.replace(r"\\|\/", " ", regex = True, case = False)
-    #     #replace double hyphen... yes it happens
-    temp['street_number'] = temp['street_number'].str.replace(r"--", r"-", regex = True, case = False)
+    # Replace hyphens with spaces around them with simple hyphen
+    df['street_number'] = df['street_number'].str.replace(r"\s*-\s*", "-", regex=True, case=False)
+    
+    # Extract last word and remove letters
+    df['street_number'] = df['street_number'].str.extract(r"([^\s]+)$")[0]
+    df['street_number'] = df['street_number'].str.replace(r"[a-zA-Z]+", "", regex=True, case=False)
+    
+    # Remove dangling hyphens and slashes - FIXED REGEX
+    df['street_number'] = df['street_number'].str.replace(r"^-+|-+$", "", regex=True, case=False)
+    df['street_number'] = df['street_number'].str.replace(r"[\\\/]", " ", regex=True, case=False)
+    
+    # Replace double hyphens
+    df['street_number'] = df['street_number'].str.replace(r"-{2,}", "-", regex=True, case=False)
+    
+    # Clean up empty strings and single hyphens
+    df.loc[df['street_number'].str.len() == 0, 'street_number'] = np.nan
+    df.loc[df['street_number'] == "-", 'street_number'] = np.nan
+    
+    return df
 
-    #
-    temp.loc[temp['street_number'].str.len() == 0, 'street_number'] = np.nan
-    #some names are simply a string of hyphentated words, this would leave a single - which would cause a crash, this removes those
-    temp.loc[temp['street_number']=="-", 'street_number'] = np.nan
-    
-    return(temp)
     
 ##street matching
 
@@ -443,13 +448,19 @@ def street_number_to_lsoa(temp_road, target_number):
     
     return out
 
+
 def load_voa_ratinglist(file_path, postcode_district_lookup):
-
     """
-    This alllows businesses to be identified, and also missing lsoa to be added via the street name
+    This allows businesses to be identified, and also missing lsoa to be added via the street name.
+    Can handle both direct CSV files and ZIP files (will automatically find and use the largest file in the ZIP).
     """
 
-    VOA_headers_raw= ["Incrementing Entry Number", "Billing Authority Code", "NDR Community Code", 
+    def find_largest_file(zip_path):
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            largest_file = max(zip_ref.infolist(), key=lambda x: x.file_size)
+            return largest_file.filename
+
+    VOA_headers_raw = ["Incrementing Entry Number", "Billing Authority Code", "NDR Community Code", 
      "BA Reference Number", "Primary And Secondary Description Code", "Primary Description Text",
     "Unique Address Reference Number UARN", "Full Property Identifier", "Firms Name", "Number Or Name",
     "Street", "Town", "Postal District", "County", "Postcode", "Effective Date", "Composite Indicator",
@@ -458,57 +469,66 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
      "Current From Date", "Current To Date", 
     ]
 
-    #set to lower and replace spaces with underscore to turn the names into appropriate column names
+    # Set to lower and replace spaces with underscore to turn the names into appropriate column names
     VOA_headers = [x.lower().replace(" ", "_") for x in VOA_headers_raw]
     
-    
-    voa_businesses =  pd.read_csv(file_path,
-                   sep = "*",
-                   encoding_errors= 'ignore',
-                    header=None,
-                   names = VOA_headers,
-                    index_col = False,
-                    #usecols = list(range(1,28))
-                   )
+    # Check if the file is a ZIP file
+    if file_path.lower().endswith('.zip'):
+        # Handle ZIP file
+        largest_file = find_largest_file(file_path)
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            with zip_ref.open(largest_file) as csv_file:
+                voa_businesses = pd.read_csv(csv_file,
+                           sep="*",
+                           encoding_errors='ignore',
+                           header=None,
+                           names=VOA_headers,
+                           index_col=False,
+                           )
+    else:
+        # Handle direct CSV file
+        voa_businesses = pd.read_csv(file_path,
+                       sep="*",
+                       encoding_errors='ignore',
+                       header=None,
+                       names=VOA_headers,
+                       index_col=False,
+                       )
+
     voa_businesses['postcode'] = voa_businesses['postcode'].str.lower()
     voa_businesses['street'] = voa_businesses['street'].str.lower()
 
-    #voa_businesses['street_name2'] = voa_businesses['street'].str.replace(r"'", "", regex = True).\
-    #    str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
-    voa_businesses['street_name2'] = voa_businesses.loc[:,'street'].str.replace(r"'", "", regex = True).\
-        str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
+    voa_businesses['street_name2'] = voa_businesses.loc[:,'street'].str.replace(r"'", "", regex=True).\
+        str.replace(r"s(s)?(?=\s)", "", regex=True).str.replace(r"\s", "", regex=True)
 
-    #this removes advertising hordings which are irrelevant
+    # This removes advertising hordings which are irrelevant
     voa_businesses = voa_businesses.loc[voa_businesses['primary_description_text'].str.contains("ADVERTISING")==False,:]
-    #remove several kinds of car parking space
+    # Remove several kinds of car parking space
     voa_businesses = voa_businesses[~voa_businesses['primary_and_secondary_description_code'].isin(['C0', 'CP','CP1', 'CX', 'MX'])]
-    ##
+    
     ##
     ## Warning this removes a large amount of columns, these may be interesting for some people
     ##
-    ##
     voa_businesses = voa_businesses.iloc[:,4:15]
-    #Extract the street number
-    #replace unit numbers with nothing to avoid accidentally using them as street numbers
-    #voa_businesses['street_number'] = voa_businesses['number_or_name'].str.replace(r"(unit|suite)\s\d+(,)?", "", regex = True).str.extract(r"(\b[0-9\-]+$)")
-    voa_businesses = clean_street_numbers(voa_businesses, original_column = 'number_or_name')
+    
+    # Extract the street number
+    # Replace unit numbers with nothing to avoid accidentally using them as street numbers
+    voa_businesses = clean_street_numbers(voa_businesses, original_column='number_or_name')
 
-    #Westfield has a ludicrous numbering system and is removed to avoid issues
-    voa_businesses.loc[voa_businesses['full_property_identifier'].str.contains('WESTFIELD SHOPPING CENTRE')==True, 'street_number']= np.nan
-    #sometimes a phone number ends up in the address causing havoc, these are few (145) and  are ignored
-    voa_businesses.loc[voa_businesses['street_number'].str.contains(r'-\d+-', regex = True)==True, 'street_number']= np.nan
+    # Westfield has a ludicrous numbering system and is removed to avoid issues
+    voa_businesses.loc[voa_businesses['full_property_identifier'].str.contains('WESTFIELD SHOPPING CENTRE')==True, 'street_number'] = np.nan
+    # Sometimes a phone number ends up in the address causing havoc, these are few (145) and are ignored
+    voa_businesses.loc[voa_businesses['street_number'].str.contains(r'-\d+-', regex=True)==True, 'street_number'] = np.nan
 
-    voa_businesses['postcode2'] = voa_businesses['postcode'].str.lower().str.replace("\s", "", regex = True)
-    #Extracts the name of any "house" buildings
+    voa_businesses['postcode2'] = voa_businesses['postcode'].str.lower().str.replace("\s", "", regex=True)
+    # Extracts the name of any "house" buildings
     voa_businesses['building_name'] = voa_businesses['number_or_name'].str.lower().str.extract(r'((?<!\S)(?:(?!\b(?:\)|\(|r\/o|floor|floors|pt|and|annexe|room|gf|south|north|east|west|at|on|in|of|adjoining|adj|basement|bsmt|fl|flr|flrs|wing)\b)[^\n\d])*? house\b)')
 
-    #add in postcode data and LSOA etc data, this is useful for a range of tasks
-    voa_businesses = voa_businesses.merge(postcode_district_lookup, left_on = 'postcode2', right_on = "postcode2")
+    # Add in postcode data and LSOA etc data, this is useful for a range of tasks
+    voa_businesses = voa_businesses.merge(postcode_district_lookup, left_on='postcode2', right_on="postcode2")
 
-
-
-    voa_businesses['street_name2'] = voa_businesses.loc[:,'street'].str.replace(r"'", "", regex = True).\
-        str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
+    voa_businesses['street_name2'] = voa_businesses.loc[:,'street'].str.replace(r"'", "", regex=True).\
+        str.replace(r"s(s)?(?=\s)", "", regex=True).str.replace(r"\s", "", regex=True)
 
     return voa_businesses
 
