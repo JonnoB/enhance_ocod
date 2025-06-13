@@ -7,4 +7,3 @@ transformers
 datasets
 config
 accelerate>=0.26.0
-SPARQLWrapper

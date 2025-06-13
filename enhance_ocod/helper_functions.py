@@ -457,30 +457,6 @@ def create_all_street_addresses(voa_businesses, target_lad, return_columns = ['s
     
     temp = voa_businesses[voa_businesses['lad11cd'] == target_lad].copy(deep = True)
 
-    ##
-    ## The below commented block has been replaces as street numbers are now created at dataloading
-    ##
-
-    
-    # #remove anything in brackets
-    # temp['street_number'] = temp['street_number'].str.replace(r"\(.+\)", "", regex = True, case = False)
-    
-    # #units often slip in as street numbers, this kills them off
-    # temp.loc[temp['street_number'].str.contains(r"unit|suite", regex = True, case = False)==True, 'street_number'] = np.nan
-    
-    # #replace @ and & with words
-    # temp['street_number'] = temp['street_number'].str.replace(r"@", " at ", regex = True, case = False).str.replace(r"&", " and ", regex = True, case = False)
-    
-    # #replace "-" with spaces with a simple "-"
-    # temp['street_number'] = temp['street_number'].str.replace(r"(\s)?-(\s)?", "-", regex = True, case = False)
-    
-    # #take only things after the last space includes cases where there is no space. Then remove all letters
-    # temp['street_number'] = temp['street_number'].str.extract(r"([^\s]+$)")[0].str.replace(r"([a-z]+)", "", regex = True, case = False)
-    # #remove dangling hyphens and slashes
-    # temp['street_number'] = temp['street_number'].str.replace(r"(-$)|(^-)|\\|\/", "", regex = True, case = False)
-    # #replace double hyphen... yes it happens
-    # temp['street_number'] = temp['street_number'].str.replace(r"--", r"-", regex = True, case = False)
-    # temp.loc[temp['street_number'].str.len() == 0, 'street_number'] = np.nan
     temp.loc[temp['street_number'].str.contains(r"\.", regex = True)==True, 'street_number'] = np.nan
 
     temp['is_multi'] = temp['street_number'].str.contains(r"-", regex = True)
