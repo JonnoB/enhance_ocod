@@ -90,7 +90,7 @@ def main(args: List[str]) -> None:
     print("Load and pre-process the Land Registry price paid dataset")
     price_paid_df = load_and_process_pricepaid_data(root_path+'price_paid_files/', postcode_district_lookup)
     
-    print("Add in missing Local authority codes to the ocoda dataset")
+    print("Add in missing Local authority codes to the ocod dataset")
     ocod_data = add_missing_lads_ocod(ocod_data, price_paid_df)
     
     print("Load and pre-process the voa business ratings list dataset")

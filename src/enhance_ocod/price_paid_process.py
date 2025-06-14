@@ -50,7 +50,7 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 import numpy as np
-from locate_and_classify_helper_functions import clean_street_numbers
+from enhance_ocod.locate_and_classify_helper_functions import clean_street_numbers
 
 
 def process_single_chunk(df, postcode_district_lookup):

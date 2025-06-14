@@ -1,24 +1,52 @@
+"""
+mbert_train.py
+
+This script trains a ModernBERT-based token classification model for Named Entity Recognition (NER) on address components.
+It performs the following steps:
+
+1. Loads and preprocesses training and validation data from JSON files.
+2. Defines the entity types to be recognized (e.g., building name, street name, postcode, etc.).
+3. Configures the HuggingFace Trainer with appropriate hyperparameters and data collators.
+4. Trains the model for a specified number of epochs.
+5. Evaluates the model on the validation set using custom metrics.
+6. Saves the trained model and tokenizer to the specified output directory.
+
+Key dependencies:
+    - transformers (HuggingFace)
+    - torch
+    - enhance_ocod.bert_utils (custom utilities for data processing and metrics)
+
+Environment:
+    Expects data files and output directories to be structured relative to the script location.
+
+Typical usage:
+    python mbert_train.py
+"""
+
 from transformers import (
     AutoModelForTokenClassification,
     TrainingArguments,
     Trainer,
     DataCollatorForTokenClassification
 )
-from bert_utils import NERDataProcessor, compute_metrics, create_label_list
+from pathlib import Path
+from enhance_ocod.bert_utils import NERDataProcessor, compute_metrics, create_label_list
 import torch
 
 torch.set_float32_matmul_precision('high')
 
+SCRIPT_DIR = Path(__file__).parent.absolute()
+
 model_name = "answerdotai/ModernBERT-base"
 
-train_data_path = "data/training_data/training_data_dev.json" 
-val_data_path =  "data/training_data/training_data_test.json"
+train_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / "training_data_dev.json") 
+val_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / "training_data_test.json")
 
 num_train_epochs = 6
 batch_size = 16
 learning_rate = 5e-5
 max_length  = 128
-output_dir = "models/address_parser"
+output_dir = str(SCRIPT_DIR / ".." / "models" / "address_parser")
 entity_types = [
     "building_name",
     "street_name",
