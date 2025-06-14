@@ -109,13 +109,10 @@ What's in the laundromat? Mapping and characterising offshore owned residential 
 
 The next thing I need to do is either download the spacy model or retrain it on the data in the repo. Then test the entire pipeline
 
-- The big change is rebuilding the test dataset and the in a more straight forward way not using the programmatic approach and also probably not SpaCy
-- Changing model to HF means it can be easily downloaded into the program which would be super helpful instead of storing the SpaCy weights
-- Review training data, see how modern LLM's can parse the data, use them to create larger training corpus
+
+- The original version had some manual data quality checks, I need to see if these are still issues, certain things like kkey errors saying 10-1124 not 100-112 will still be there and having a method to identify these error would be helpful.
 - set up lightning evironment and test current method works
 - perform memory and speed profiling on the process, or different sections of it, what optimisations would speed things up?
-- code refactor for ease of understanding
 - add docstrings and type hints
 - tests!
-- convert to python library
 - make pypi installable
