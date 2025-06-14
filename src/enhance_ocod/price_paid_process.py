@@ -220,12 +220,12 @@ def load_years_data(years, processed_dir="data/processed_price_paid"):
         return pd.DataFrame()
 
 
-def load_and_process_pricepaid_data(file_path, postcode_district_lookup, years_needed):
+def load_and_process_pricepaid_data(file_path, processed_dir, postcode_district_lookup, years_needed):
     """
     New main function that uses the preprocessing approach
     """
     # Check and preprocess if needed
-    check_and_preprocess_if_needed(file_path, postcode_district_lookup)
+    check_and_preprocess_if_needed(file_path, postcode_district_lookup, processed_dir)
     
     # Load only the years needed
-    return load_years_data(years_needed)
+    return load_years_data(years_needed, processed_dir)

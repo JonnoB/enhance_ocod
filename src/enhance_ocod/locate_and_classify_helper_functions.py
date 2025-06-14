@@ -544,7 +544,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
     """
     
     #replce the missing lsoa using street matching
-    print('replace the missing lsoa using street matching')
+    #print('replace the missing lsoa using street matching')
 
     temp_lsoa = pd.concat([
         price_paid_df[['street_name2', 'lad11cd', 'lsoa11cd']], voa_businesses[['street_name2', 'lad11cd', 'lsoa11cd']]
@@ -561,7 +561,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
 
     #replace the missing lsoa using building matching
 
-    print('replace the missing lsoa using building matching')
+    #print('replace the missing lsoa using building matching')
 
     temp = price_paid_df.copy()
 
@@ -599,7 +599,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
     #fill in the lsoa11cd using the newly ID'd lsoa from the matching process
     #then repeat with the OA
 
-    print("insert newly ID'd LSOA and OA")
+    #print("insert newly ID'd LSOA and OA")
 
     #I appreciate this is an almost artistically silly way of doing this. 
     for x in ['lsoa_street', 'lsoa_building', 'lsoa_busi_building']:#, 'lsoa_business']:
@@ -609,7 +609,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
     for x in ['oa_building', 'oa_busi_building']:#, 'lsoa_business']:
         ocod_data.loc[ocod_data['oa11cd'].isnull(), 'oa11cd'] = ocod_data[x][ocod_data['oa11cd'].isnull()] 
 
-    print("update missing LSOA and OA for nested properties where at least one nested property has an OA or LSOA")
+    #print("update missing LSOA and OA for nested properties where at least one nested property has an OA or LSOA")
     #after all other lsoa adding methods are completed
     #all nested properties with missing lsoa have the lsoa of the other properties within their group added
 
@@ -765,7 +765,7 @@ def voa_address_match_all_data(ocod_data, voa_businesses, print_lads = False, pr
     for target_lad in all_lads:
         if print_lads: print(target_lad)
             
-        if (i>0) & (i%print_every==0): print("address matched ", i, "lads of "+ str(round(len(all_lads), 3)))
+        #if (i>0) & (i%print_every==0): print("address matched ", i, "lads of "+ str(round(len(all_lads), 3)))
         i = i+1
         #temp['matches_business_address'] = business_address_matcher(temp['street_name'], temp['street_number'], voa_businesses, target_lad)
         matched_lads_list = matched_lads_list + [massaged_address_match(ocod_data, voa_businesses, target_lad)]

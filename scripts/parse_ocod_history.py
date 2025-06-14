@@ -68,6 +68,10 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 
+import torch
+
+torch.set_float32_matmul_precision('medium')
+
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
 # ====== CONSTANT PATHS AND SETTINGS ======
@@ -76,6 +80,7 @@ output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
 model_path = SCRIPT_DIR.parent / "models" / "address_parser" / "checkpoint-750"
 ONSPD_path = SCRIPT_DIR.parent / "data" / "ONSPD_FEB_2025.zip"
 price_paid_path = SCRIPT_DIR.parent / "data" / "price_paid_data" / "price_paid_complete_may_2025.csv"
+processed_price_paid_dir = SCRIPT_DIR.parent / "data" / "processed_price_paid"
 voa_path = SCRIPT_DIR.parent / "data" / "2023_non_domestic_rating_list_entries.zip"
 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -130,7 +135,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
 
     ocod_data = preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup)
 
-    price_paid_df = load_and_process_pricepaid_data(file_path=str(price_paid_path),
+    price_paid_df = load_and_process_pricepaid_data(file_path=str(price_paid_path), processed_dir = processed_price_paid_dir,
                                                     postcode_district_lookup=postcode_district_lookup, years_needed=[2017, 2018, 2019])
 
     ocod_data = add_missing_lads_ocod(ocod_data, price_paid_df)
