@@ -13,14 +13,30 @@ from typing import Optional, List, Callable
 ##
 
 def load_cleaned_labels(file_path):
-    """
-    Used when the json file being loaded has already had overlaps removed using the json overlap removing
-    code from the unit tagging and span cleaning notebook
+    """Load and process labeled entity data from a JSON file returning a pandas Dataframe.
     
-    N.B.
-    This function is clear and intemediary function and I would like to remove it when possible
-    This function is not neccessary when the denoising process has taken place
-
+    Reads a JSON file containing labeled text data, normalizes the structure,
+    and adds metadata for easier analysis. The function expects JSON data with
+    'labels', 'datapoint_id', and 'text' fields.
+    
+    Args:
+        file_path (str): Path to the JSON file containing labeled data.
+        
+    Returns:
+        pandas.DataFrame: A DataFrame with columns:
+            - label_text: The text content of each label
+            - datapoint_id: Identifier for each data point
+            - text: The original text content
+            - start: Start position of the label (from original JSON)
+            - label: Label category/type (from original JSON)
+            - label_id_count: Sequential count of labels within each
+              datapoint_id and label combination
+              
+    Raises:
+        FileNotFoundError: If the specified file_path does not exist.
+        json.JSONDecodeError: If the file contains invalid JSON.
+        KeyError: If required fields ('labels', 'datapoint_id', 'text') 
+                 are missing from the JSON structure.
     """
     
 
@@ -39,82 +55,164 @@ def load_cleaned_labels(file_path):
     
     return all_entities
 
-def remove_overlaps_jonno(x):
+def remove_overlaps(df):
+    """Remove overlapping intervals, keeping the longest one in each overlap group.
     
+    Processes a DataFrame containing interval data (with 'start' and 'end' columns)
+    and removes overlapping intervals by keeping only the longest interval from each
+    group of overlapping intervals.
+    
+    Args:
+        df (pandas.DataFrame): DataFrame containing interval data. Must have 'start' 
+                              and 'end' columns representing interval boundaries.
+                              
+    Returns:
+        pandas.DataFrame: DataFrame with overlapping intervals removed. Contains the
+                         same columns as input, but with fewer rows where overlaps
+                         were detected. Intervals are returned in sorted order by
+                         start position.
+                         
+    Notes:
+        - Empty DataFrames are returned unchanged
+        - When intervals overlap, the longest interval (by end - start) is kept
+        - If multiple intervals have the same length, the first one encountered is kept
+        - Time complexity: O(n log n) due to sorting
+        - Space complexity: O(n)
+        
+    Example:
+        >>> df = pd.DataFrame({
+        ...     'start': [0, 2, 5, 7],
+        ...     'end': [4, 6, 8, 9],
+        ...     'label': ['A', 'B', 'C', 'D']
+        ... })
+        >>> remove_overlaps_efficient(df)
+        # Returns intervals where overlaps between A-B and C-D are resolved
     """
-    This is my version of the overlap removal. It works but is quite slow.
-    Harry from Humanloop made a different version. Mine was at one point faster, not sure now.
-    This function only needs to be used if denoising process has not been used
+    if df.empty:
+        return df
+    
+    # Sort by start position
+    df_sorted = df.sort_values(['start', 'end']).reset_index(drop=True)
+    
+    # Find overlapping groups
+    groups = []
+    current_group = [0]
+    current_end = df_sorted.iloc[0]['end']
+    
+    for i in range(1, len(df_sorted)):
+        start = df_sorted.iloc[i]['start']
+        end = df_sorted.iloc[i]['end']
+        
+        if start < current_end:  # Overlap
+            current_group.append(i)
+            current_end = max(current_end, end)
+        else:  # No overlap, start new group
+            groups.append(current_group)
+            current_group = [i]
+            current_end = end
+    
+    groups.append(current_group)  # Don't forget the last group
+    
+    # Keep longest interval from each group
+    result_indices = []
+    for group in groups:
+        group_df = df_sorted.iloc[group]
+        longest_idx = group_df['end'] - group_df['start']
+        longest_idx = group[longest_idx.idxmax()]
+        result_indices.append(longest_idx)
+    
+    return df_sorted.iloc[result_indices].reset_index(drop=True)
+
+
+
+def load_data_with_overlaps(file_path):
+    """Load and process JSON file containing labeled text data with overlapping intervals.
+    
+    Reads a JSON file with a specific structure containing datapoints with programmatic
+    labeling results, extracts the relevant information, and removes overlapping labels
+    by keeping the longest label in each overlap group.
+    
+    Args:
+        file_path (str): Path to the JSON file. Expected structure:
+                        {
+                          "datapoints": [
+                            {
+                              "id": "datapoint_id",
+                              "data": {"text": "original text"},
+                              "programmatic": {
+                                "results": [
+                                  {
+                                    "start": int,
+                                    "end": int,
+                                    "text": "label_text",
+                                    "label": "label_category"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                        
+    Returns:
+        pandas.DataFrame: Processed DataFrame with columns:
+            - datapoint_id: Unique identifier for each data point
+            - text: Original text content from the data point
+            - label_text: Text content of the label/annotation
+            - start: Start position of the label in the text
+            - end: End position of the label in the text  
+            - label: Category/type of the label
+            - label_id_count: Sequential count of labels within each
+                             datapoint_id and label combination
+                             
+    Raises:
+        FileNotFoundError: If the specified file_path does not exist.
+        json.JSONDecodeError: If the file contains invalid JSON.
+        KeyError: If the expected JSON structure is not found.
+        
+    Notes:
+        - Overlapping labels within each datapoint are automatically removed
+        - When labels overlap, the longest label is kept
+        - Processing time scales as O(n log n × m) where n is average labels 
+          per datapoint and m is number of datapoints
+        - Empty result sets are handled gracefully
     """
     
-    #this functions is modified from 
-    #https://stackoverflow.com/questions/57804145/combining-rows-with-overlapping-time-periods-in-a-pandas-dataframe
-    x = x.copy()
-    #create a unique label, this is used for joining the data back on 
-    #and removes a reliance on the data being pre-sorted
-    x['unique_label'] = [*range(0,x.shape[0])]
-    #get the size of the spans
-    x['diff'] = (x['end']-x['start'])
-
-    
-    startdf = pd.DataFrame({'position':x['start'], 'unique_label':x['unique_label'], 'what':1})
-    enddf = pd.DataFrame({'position':x['end'], 'unique_label':x['unique_label'], 'what':-1})
-    mergdf = pd.concat([startdf, enddf]).sort_values('position')
-    mergdf['running'] = mergdf['what'].cumsum()
-    mergdf['newwin'] = mergdf['running'].eq(1) & mergdf['what'].eq(1)
-    mergdf['group'] = mergdf['newwin'].cumsum()
-    
-    #merge back on using uniqe label to ensure correct ordering
-    x = x.merge(mergdf.loc[mergdf['what'].eq(1),['unique_label','group']], how = 'left', on = 'unique_label')
-    #sort within group and keep only the largest
-    x = x.sort_values('diff', ascending=False).groupby(['group', 'datapoint_id'], as_index=False).first()
-
-    x.drop(['diff', 'unique_label', 'group'], axis = 1, inplace = True)
-    
-    x.reset_index(drop = True, inplace = True)
-
-    return(x)
-
-
-def load_data_with_overlaps_jonno(file_path):
-    
-    """
-    This function is used to load a json file that contains overlapping labels
-    It uses my version of the overlap remover
-    
-    """
-    
-    print('loading json')
+    print('Loading JSON')
     with open(file_path, "r") as read_file:
         all_entities_json = json.load(read_file)
     
-    print('pre-processing data')
-
-    all_entities = pd.json_normalize(
-        all_entities_json["datapoints"],
-        record_path=["programmatic", "results"],
-        meta=["data", "id"],
-        #record_prefix="result_stuff.",
-        meta_prefix="data_stuff.",
-        errors="ignore",
-    )
-    all_entities = all_entities.rename(columns = {'data_stuff.id':'datapoint_id',
-                                                 'text':'label_text'})
-
-    all_entities["text"] = all_entities["data_stuff.data"].map(lambda x: x["text"])
-
-    #all_entities.drop(['data_stuff.data'], axis = 1, inplace = True)
-
-    all_entities = all_entities.sort_values(['datapoint_id', 'start'])
-
-    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label']).cumcount()
-
-    all_entities.drop(columns = ['data_stuff.data'], inplace = True)
+    print('Pre-processing data')
     
-    print('renmoving overlaps this takes time')
-    all_entities = all_entities.groupby(['datapoint_id']).apply(remove_overlaps_jonno)
-
-    all_entities.reset_index(drop = True, inplace = True)
+    # Extract text during normalization to avoid keeping full data structure
+    datapoints = []
+    for dp in all_entities_json["datapoints"]:
+        text = dp["data"]["text"]
+        datapoint_id = dp["id"]
+        
+        for result in dp.get("programmatic", {}).get("results", []):
+            result_copy = result.copy()
+            result_copy["datapoint_id"] = datapoint_id
+            result_copy["text"] = text
+            result_copy["label_text"] = result.get("text", "")
+            datapoints.append(result_copy)
+    
+    all_entities = pd.DataFrame(datapoints)
+    
+    if all_entities.empty:
+        return all_entities
+    
+    # Add label count before overlap removal
+    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label']).cumcount()
+    
+    print('Removing overlaps - this should be much faster now')
+    
+    # Apply efficient overlap removal
+    result_dfs = []
+    for datapoint_id, group in all_entities.groupby('datapoint_id'):
+        cleaned_group = remove_overlaps(group)  # Use the efficient version
+        result_dfs.append(cleaned_group)
+    
+    all_entities = pd.concat(result_dfs, ignore_index=True)
     
     return all_entities
 

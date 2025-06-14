@@ -385,45 +385,7 @@ def create_all_street_addresses(voa_businesses, target_lad, return_columns = ['s
     return(street_address_lookup)
     
     
-    
-    
- ##
- ## The Fuzzy and massaged street match were an intermediary stage of development where I needed to check out street matching quality.
- ## they have both been superceded by the massaged_address_match function
- ##
 
-def massaged_street_match(ocod_data, voa_data, target_lad):
-##
-## This exact match works pretty much as well as the fuzzy matcher but is much faster and clearer
-##
-    #filters to a single LAD
-    #removes advertising hoardings which are irrelevant
-    LAD_biz = voa_data.loc[(voa_data['lad11cd']==target_lad)].copy(deep = True)
-    
-    LAD_biz.loc[:,'street_name2'] = LAD_biz['street'].copy(deep=True)
-    #remove apostraphe's
-    LAD_biz.loc[:,'street_name2'] = LAD_biz.loc[:,'street_name2'].str.replace(r"'", "", regex = True).\
-    str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
-    
-    #subset to target LAD
-    ocod_data_road = ocod_data[ocod_data['lad11cd']==target_lad].copy(deep = True)
-    #replace nan values to prevent crash    
-    
-    #create second column
-    ocod_data_road['street_name2'] = ocod_data_road['street_name'].copy(deep=True)
-    
-    #replace nan values to prevent crash    
-    ocod_data_road.loc[ocod_data_road.street_name.isna(),'street_name2'] ="xxxstreet name missingxxx"
-    #clean street names of common matching errors
-    #remove apostraphe's
-    #remove trailing 's'
-    #remove all spaces
-    ocod_data_road['street_name2'] = ocod_data_road['street_name2'].str.replace(r"'", "", regex = True).\
-    str.replace(r"s(s)?(?=\s)", "", regex = True).str.replace(r"\s", "", regex = True)
-    
-    ocod_data_road['match'] = ocod_data_road['street_name2'].isin(LAD_biz.street_name2.unique())
-
-    return(ocod_data_road)
 
 def street_number_to_lsoa(temp_road, target_number):
     #this is a helper function that finds the nearest building with known lsoa.

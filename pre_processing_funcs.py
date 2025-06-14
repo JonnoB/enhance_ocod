@@ -50,13 +50,11 @@ import re
 import json
 from typing import List, Dict, Any
 
-# ... rest of your code follows
-
 def preprocess_text_for_tokenization(text: str) -> str:
     """
     Preprocesses text by inserting spaces at specific patterns to ensure proper tokenization.
     
-    This function addresses common tokenization issues in text data by strategically adding
+    This function addresses common tokenization issues in text data by adding
     spaces around punctuation and operators that would otherwise be incorrectly tokenized.
     This is particularly useful for address data where punctuation often appears without
     proper spacing.
@@ -90,7 +88,7 @@ def preprocess_text_for_tokenization(text: str) -> str:
     
     # Pattern 2: Add space after period between lowercase/quotes and uppercase/quotes
     # e.g., "end.Start" -> "end. Start"
-    text = re.sub(r'(?<=[a-z"\'])\.(?=[A-Z"\'])', r'. ', text)
+    text = re.sub(r'(?<=[a-z"\'])\.(?=[a-zA-Z"\'])', r'. ', text)
     
     # Pattern 3: Add spaces around commas between alphabetic characters
     # e.g., "apple,banana" -> "apple , banana"

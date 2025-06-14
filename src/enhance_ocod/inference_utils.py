@@ -28,7 +28,7 @@ class AddressParserInference:
     
     def _load_model(self):
         """Load the trained model and tokenizer"""
-        print(f"Loading model from {self.model_path}")
+        #print(f"Loading model from {self.model_path}")
         
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
@@ -42,7 +42,7 @@ class AddressParserInference:
         self.id2label = self.model.config.id2label
         self.label2id = self.model.config.label2id
         
-        print(f"Model loaded on {self.device}. Labels: {list(self.label2id.keys())}")
+        #print(f"Model loaded on {self.device}. Labels: {list(self.label2id.keys())}")
     
     def tokenize_batch(self, examples):
         """Tokenize batch of examples for dataset mapping"""

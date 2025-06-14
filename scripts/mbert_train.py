@@ -33,20 +33,20 @@ from pathlib import Path
 from enhance_ocod.bert_utils import NERDataProcessor, compute_metrics, create_label_list
 import torch
 
-torch.set_float32_matmul_precision('high')
+torch.set_float32_matmul_precision('medium')
 
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
 model_name = "answerdotai/ModernBERT-base"
 
-train_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / "training_data_dev.json") 
+train_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / "converted_full_dataset.json") 
 val_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / "training_data_test.json")
 
 num_train_epochs = 6
 batch_size = 16
 learning_rate = 5e-5
 max_length  = 128
-output_dir = str(SCRIPT_DIR / ".." / "models" / "address_parser")
+output_dir = str(SCRIPT_DIR / ".." / "models" / "address_parser_full")
 entity_types = [
     "building_name",
     "street_name",
