@@ -1,3 +1,57 @@
+"""
+OCOD Dataset Enhancement and Processing Pipeline
+
+This script processes the OCOD (Overseas Companies that Own Property in England and Wales) 
+historical dataset files through a comprehensive enhancement pipeline that includes address 
+parsing, geolocation, and property classification.
+
+About OCOD Dataset:
+The OCOD dataset contains information about properties in England and Wales that are owned 
+by overseas companies. This data is published by HM Land Registry and includes company 
+details, property addresses, and ownership information.
+
+Processing Pipeline:
+1. **Address Parsing**: Uses a trained NLP model to parse and standardize property addresses
+   from the raw address strings, extracting structured components like building numbers,
+   street names, localities, and postcodes.
+
+2. **Geolocation**: Enhances addresses with geographic information by:
+   - Matching postcodes to administrative boundaries using ONSPD data
+   - Adding Local Authority District (LAD) codes and other geographic identifiers
+   - Cross-referencing with price paid data for additional location context
+
+3. **Address Matching**: Performs sophisticated address matching against:
+   - HM Land Registry Price Paid data for property transaction history
+   - VOA (Valuation Office Agency) rating list for business classification
+   - Street-level and sub-street level matching algorithms
+
+4. **Property Classification**: Classifies properties based on:
+   - Business activity data from VOA rating lists
+   - Statistical analysis of business density per Output Area (OA) and Lower Super Output Area (LSOA)
+   - Property type and usage patterns
+
+Input Files:
+- OCOD_FULL_*.zip: Historical OCOD dataset files from HM Land Registry
+- ONSPD_FEB_2025.zip: Ordnance Survey National Statistics Postcode Directory
+- price_paid_complete_may_2025.csv: HM Land Registry Price Paid dataset
+- 2023_non_domestic_rating_list_entries.zip: VOA non-domestic rating list
+
+Output:
+- Processed OCOD data saved as Parquet files with enhanced address information,
+  geographic identifiers, and property classifications
+
+Usage:
+Run this script to process all OCOD historical files in the input directory.
+The script will skip files that have already been processed (existing output files).
+
+Example:
+    python ocod_processing_pipeline.py
+
+Note:
+This is a computationally intensive process that requires significant memory and processing
+time. The script includes memory management strategies and progress tracking.
+"""
+
 from enhance_ocod.inference_utils import parse_addresses_from_csv, convert_to_entity_dataframe
 from enhance_ocod.address_parsing_helper_functions import (
     load_and_prep_OCOD_data, parsing_and_expansion_process, post_process_expanded_data
@@ -26,7 +80,11 @@ voa_path = SCRIPT_DIR.parent / "data" / "2023_non_domestic_rating_list_entries.z
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # List of all zip files in input_dir
-all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])
+#
+#
+#TESTING!!! only 10 files!
+#
+all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])[0:10]
 
 print(f"Found {len(all_files)} OCOD history files.")
 
