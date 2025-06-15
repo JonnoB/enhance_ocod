@@ -586,7 +586,7 @@ def load_csv_from_zip(zip_path: str,
     
     return df
 
-def load_and_prep_OCOD_data(file_path, csv_filename=None):
+def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns = None):
     """
     Load and preprocess OCOD dataset for address parsing.
     
@@ -598,13 +598,14 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None):
         pd.DataFrame: Processed OCOD data with normalized addresses
     """
     
-    # Define columns to keep upfront to avoid loading unnecessary data
-    KEEP_COLUMNS = ['title_number', 'tenure', 'district', 'county',
-                    'region', 'price_paid', 'property_address']
+    if keep_columns is None:
+        # Define columns to keep upfront to avoid loading unnecessary data
+        keep_columns = ['title_number', 'tenure', 'district', 'county',
+                        'region', 'price_paid', 'property_address']
     
     # Column filter function (same logic for both CSV and ZIP)
     def column_filter(x):
-        return x.lower().replace(" ", "_") in KEEP_COLUMNS
+        return x.lower().replace(" ", "_") in keep_columns
     
     # pre-processing regex patterns for better tokenisation
     REGEX_PATTERNS = [
@@ -639,7 +640,7 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None):
                     encoding_errors='ignore'
                 )
                 ocod_data = ocod_data.rename(columns=lambda x: x.lower().replace(" ", "_"))
-                available_columns = [col for col in KEEP_COLUMNS if col in ocod_data.columns]
+                available_columns = [col for col in keep_columns if col in ocod_data.columns]
                 ocod_data = ocod_data[available_columns]
         else:
             # Load from regular CSV file
@@ -657,7 +658,7 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None):
                     encoding_errors='ignore'
                 )
                 ocod_data = ocod_data.rename(columns=lambda x: x.lower().replace(" ", "_"))
-                available_columns = [col for col in KEEP_COLUMNS if col in ocod_data.columns]
+                available_columns = [col for col in keep_columns if col in ocod_data.columns]
                 ocod_data = ocod_data[available_columns]
         
         # Normalize column names (in case usecols worked and we skipped this step)

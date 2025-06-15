@@ -183,7 +183,6 @@ def parse_addresses_from_csv(
     model_path: str,
     target_column: str = "address",
     index_column: Optional[str] = None,
-    csv_filename: Optional[str] = None,
     batch_size: int = 64
 ) -> Dict:
     """
@@ -192,7 +191,6 @@ def parse_addresses_from_csv(
         model_path: Path to trained model
         target_column: Column name containing addresses
         index_column: Column to use as index (if None, uses pandas index)
-        csv_filename: If csv_path is zip, specific CSV file to use
         batch_size: Batch size for inference
         
     Returns:
@@ -205,13 +203,20 @@ def parse_addresses_from_csv(
     if target_column not in df.columns:
         raise ValueError(f"Column '{target_column}' not found. Available columns: {list(df.columns)}")
     
-    # Handle index column
+    # Handle index column - default to datapoint_id if it exists and no index_column specified
+    if index_column is None and "datapoint_id" in df.columns:
+        index_column = "datapoint_id"
+    
     if index_column:
         if index_column not in df.columns:
             raise ValueError(f"Index column '{index_column}' not found. Available columns: {list(df.columns)}")
         indices = df[index_column].tolist()
     else:
         indices = df.index.tolist()
+    
+    # Check if datapoint_id exists for inclusion in results
+    has_datapoint_id = "datapoint_id" in df.columns
+    datapoint_ids = df["datapoint_id"].tolist() if has_datapoint_id else None
     
     # Prepare data
     addresses = df[target_column].fillna("").astype(str).tolist()
@@ -226,6 +231,7 @@ def parse_addresses_from_csv(
     for i in tqdm(batch_ranges, desc="Processing batches", unit="batch"):
         batch_addresses = addresses[i:i+batch_size]
         batch_indices = indices[i:i+batch_size]
+        batch_datapoint_ids = datapoint_ids[i:i+batch_size] if has_datapoint_id else None
         
         # Tokenize batch
         inputs = parser.tokenizer(
@@ -260,12 +266,19 @@ def parse_addresses_from_csv(
             # Extract entities
             entities = parser._extract_entities(address, tokens, predicted_labels, offset_mapping)
             
-            all_results.append({
+            # Build result dictionary
+            result = {
                 "row_index": index,
                 "original_address": address,
                 "entities": entities,
                 "parsed_components": parser._group_entities_by_type(entities)
-            })
+            }
+            
+            # Add datapoint_id if it exists
+            if has_datapoint_id:
+                result["datapoint_id"] = batch_datapoint_ids[j]
+            
+            all_results.append(result)
     
     # Calculate statistics
     successful_parses = len([r for r in all_results if len(r["entities"]) > 0])

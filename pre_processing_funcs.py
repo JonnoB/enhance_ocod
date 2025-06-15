@@ -90,9 +90,9 @@ def preprocess_text_for_tokenization(text: str) -> str:
     # e.g., "end.Start" -> "end. Start"
     text = re.sub(r'(?<=[a-z"\'])\.(?=[a-zA-Z"\'])', r'. ', text)
     
-    # Pattern 3: Add spaces around commas between alphabetic characters
-    # e.g., "apple,banana" -> "apple , banana"
-    text = re.sub(r'(?<=[a-zA-Z]),(?=[a-zA-Z])', r' , ', text)
+    # Pattern 3: Add space after commas between alphabetic characters
+    # e.g., "apple,banana" -> "apple, banana"
+    text = re.sub(r'(?<=[a-zA-Z]),(?=[a-zA-Z])', r', ', text)
     
     # Pattern 4: Add spaces around hyphens between alphabetic characters
     # e.g., "semi-detached" -> "semi - detached"
