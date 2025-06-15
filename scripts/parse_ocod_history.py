@@ -52,7 +52,7 @@ This is a computationally intensive process that requires significant memory and
 time. The script includes memory management strategies and progress tracking.
 """
 
-from enhance_ocod.inference_utils import parse_addresses_from_csv, convert_to_entity_dataframe
+from enhance_ocod.inference_utils import parse_addresses_batch, convert_to_entity_dataframe
 from enhance_ocod.address_parsing_helper_functions import (
     load_and_prep_OCOD_data, parsing_and_expansion_process, post_process_expanded_data
 )
@@ -113,11 +113,12 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     import time
     start_time = time.time()
 
-    results = parse_addresses_from_csv(
+    results = parse_addresses_batch(
         df=ocod_data,
         model_path=str(model_path),
         target_column="property_address",
-        batch_size=2048
+        batch_size=512,
+        use_fp16=True
     )
 
     end_time = time.time()
