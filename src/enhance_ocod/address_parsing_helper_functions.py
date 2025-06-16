@@ -5,6 +5,7 @@ import numpy as np
 import time
 import zipfile
 from typing import Optional, List, Callable
+from preprocess import preprocess_text_for_tokenization
 #This  module is supposed to contain all the relevant functions for parsing the LabeledS json file 
 
 ##
@@ -586,45 +587,29 @@ def load_csv_from_zip(zip_path: str,
     
     return df
 
-def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns = None):
+def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
     """
     Load and preprocess OCOD dataset for address parsing.
     
     Args:
         file_path: Path to the OCOD CSV file or ZIP file containing CSV
         csv_filename: Optional specific CSV filename if loading from ZIP
+        keep_columns: List of columns to keep
         
     Returns:
         pd.DataFrame: Processed OCOD data with normalized addresses
     """
     
     if keep_columns is None:
-        # Define columns to keep upfront to avoid loading unnecessary data
         keep_columns = ['title_number', 'tenure', 'district', 'county',
                         'region', 'price_paid', 'property_address']
     
-    # Column filter function (same logic for both CSV and ZIP)
     def column_filter(x):
         return x.lower().replace(" ", "_") in keep_columns
     
-    # pre-processing regex patterns for better tokenisation
-    REGEX_PATTERNS = [
-        # Add spaces around special chars between alphanumeric
-        (r'(?<=[a-z0-9])[:<>=/\(\)](?=[a-z])', r' \g<0> '),
-        (r'(?<=[a-z])[:<>=/\(\)](?=[a-z0-9])', r' \g<0> '),
-        # Separate parentheses from digits
-        (r'(\))(\d)', r'\1 \2'),
-        (r'(\d)(\()', r'\1 \2'),
-        # Ensure space after ALL punctuation (not just commas)
-        (r'([,;:])(?=\S)', r'\1 '),
-        # Normalize hyphen spacing for ranges
-        (r'(\d+)\s*-\s*(\d+)', r'\1-\2'),
-    ]
-    
     try:
-        # Check if file is a ZIP file
+        # [Your existing file loading logic - unchanged]
         if file_path.lower().endswith('.zip'):
-            # Load from ZIP file with column filtering
             try:
                 ocod_data = load_csv_from_zip(
                     zip_path=file_path,
@@ -633,7 +618,6 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns = None):
                     encoding_errors='ignore'
                 )
             except ValueError:
-                # Fallback: load all columns then filter
                 ocod_data = load_csv_from_zip(
                     zip_path=file_path,
                     csv_filename=csv_filename,
@@ -643,16 +627,13 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns = None):
                 available_columns = [col for col in keep_columns if col in ocod_data.columns]
                 ocod_data = ocod_data[available_columns]
         else:
-            # Load from regular CSV file
             try:
-                # Load only required columns if possible
                 ocod_data = pd.read_csv(
                     file_path,
                     usecols=column_filter,
                     encoding_errors='ignore'
                 )
             except ValueError:
-                # Fallback if column names don't match expected format
                 ocod_data = pd.read_csv(
                     file_path,
                     encoding_errors='ignore'
@@ -661,7 +642,6 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns = None):
                 available_columns = [col for col in keep_columns if col in ocod_data.columns]
                 ocod_data = ocod_data[available_columns]
         
-        # Normalize column names (in case usecols worked and we skipped this step)
         ocod_data = ocod_data.rename(columns=lambda x: x.lower().replace(" ", "_"))
     
     except Exception as e:
@@ -675,17 +655,12 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns = None):
     
     ocod_data.reset_index(drop=True, inplace=True)
     
-    # Vectorized string operations
+    # Apply consistent preprocessing using the harmonized function
+    # Convert to lowercase first, then apply the tokenization preprocessing
     address_series = ocod_data['property_address'].str.lower()
     
-    # Apply all regex patterns
-    for pattern, replacement in REGEX_PATTERNS:
-        address_series = address_series.str.replace(pattern, replacement, regex=True)
-    
-    # Final cleanup: remove extra spaces and trim
-    address_series = address_series.str.replace(r'\s{2,}', ' ', regex=True).str.strip()
-    
-    ocod_data['property_address'] = address_series
+    # Use the same preprocessing function as training
+    ocod_data['property_address'] = preprocess_text_for_tokenization(address_series)
     
     return ocod_data
 
