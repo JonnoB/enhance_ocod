@@ -160,3 +160,43 @@ def validate_spans(df):
     
     df['span_valid'] = df.apply(check_span, axis=1)
     return df
+
+def dataframe_to_ner_format(df):
+    """
+    Convert a pandas DataFrame with NER annotations to the required format for training.
+    
+    Args:
+        df: pandas DataFrame with columns: datapoint_id, start, end, label, text, property_address
+    
+    Returns:
+        list: List of dictionaries in the format required for NER training
+    """
+    result = []
+    
+    # Group by datapoint_id to process each unique text
+    grouped = df.groupby('datapoint_id')
+    
+    for datapoint_id, group in grouped:
+        # Get the full text (should be the same for all rows in the group)
+        full_text = group['property_address'].iloc[0]
+        
+        # Create spans list for this datapoint
+        spans = []
+        for _, row in group.iterrows():
+            span = {
+                "text": row['text'].strip(),  # Remove any leading/trailing whitespace
+                "start": row['start'],
+                "end": row['end'],
+                "label": row['label']
+            }
+            spans.append(span)
+        
+        # Create the entry for this datapoint
+        entry = {
+            "text": full_text,
+            "spans": spans
+        }
+        
+        result.append(entry)
+    
+    return result

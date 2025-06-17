@@ -5,6 +5,8 @@ from transformers import AutoTokenizer
 from datasets import Dataset
 import numpy as np
 from sklearn.metrics import precision_recall_fscore_support
+from seqeval.metrics import f1_score, precision_score, recall_score, classification_report
+from seqeval.scheme import IOB2
 
 class NERDataProcessor:
     def __init__(self, label_list: List[str], tokenizer_name: str = "answerdotai/ModernBERT-base"):
@@ -29,35 +31,62 @@ class NERDataProcessor:
         # Get word IDs to handle subword tokens
         word_ids = tokenized_inputs.word_ids()
         
-        # Create character to label mapping
-        char_labels = ['O'] * len(text)
+        # Create character to span mapping
+        char_to_span = {}
         for span in spans:
-            start = span['start']
-            end = span['end']
-            label = span['label']
-            # Mark the first character as B- (beginning) and rest as I- (inside)
-            for i in range(start, end):
-                if i == start:
-                    char_labels[i] = f"B-{label}"
-                else:
-                    char_labels[i] = f"I-{label}"
+            for char_idx in range(span['start'], span['end']):
+                char_to_span[char_idx] = span
         
         # Map tokens to labels
         previous_word_idx = None
-        for idx, word_idx in enumerate(word_ids):
-            if word_idx is None:  # Special tokens
-                labels[idx] = -100
-            elif word_idx != previous_word_idx:  # First token of a word
-                # Get the character position for this token
-                token_start = tokenized_inputs.token_to_chars(idx).start
-                labels[idx] = self.label2id.get(char_labels[token_start], self.label2id['O'])
-            else:  # Other tokens of the word
-                # For subword tokens, use -100 to ignore in loss calculation
-                # Alternatively, you could propagate the label
-                labels[idx] = -100
+        current_entity = None
+        
+        for token_idx, word_idx in enumerate(word_ids):
+            if word_idx is None:  # Special tokens ([CLS], [SEP], [PAD])
+                labels[token_idx] = -100
+                continue
                 
-            previous_word_idx = word_idx
+            # Get character span for this token
+            try:
+                char_span = tokenized_inputs.token_to_chars(token_idx)
+                if char_span is None:
+                    labels[token_idx] = self.label2id['O']
+                    continue
+                    
+                token_start = char_span.start
+                token_end = char_span.end
+            except:
+                labels[token_idx] = self.label2id['O']
+                continue
             
+            # Check if this token overlaps with any entity span
+            entity_span = None
+            for char_idx in range(token_start, token_end):
+                if char_idx in char_to_span:
+                    entity_span = char_to_span[char_idx]
+                    break
+            
+            if entity_span is None:
+                # Token is outside any entity
+                labels[token_idx] = self.label2id['O']
+                current_entity = None
+            else:
+                # Token is inside an entity
+                entity_label = entity_span['label']
+                
+                # Determine if this is the beginning of an entity or continuation
+                if (current_entity != entity_span or 
+                    word_idx != previous_word_idx or 
+                    token_start == entity_span['start']):
+                    # This is the beginning of an entity
+                    labels[token_idx] = self.label2id.get(f'B-{entity_label}', self.label2id['O'])
+                    current_entity = entity_span
+                else:
+                    # This is a continuation of the current entity
+                    labels[token_idx] = self.label2id.get(f'I-{entity_label}', self.label2id['O'])
+            
+            previous_word_idx = word_idx
+        
         return labels
     
     def process_examples(self, examples: List[Dict], max_length: int = 128) -> Dict[str, List]:
@@ -124,41 +153,31 @@ class NERDataProcessor:
         
         return Dataset.from_list(all_processed)
 
-def compute_metrics(eval_pred):
-    """
-    Compute NER metrics (precision, recall, F1).
-    """
-    predictions, labels = eval_pred
-    predictions = np.argmax(predictions, axis=2)
-    
-    # Remove ignored index (special tokens)
-    true_predictions = [
-        [p for (p, l) in zip(prediction, label) if l != -100]
-        for prediction, label in zip(predictions, labels)
-    ]
-    true_labels = [
-        [l for l in label if l != -100]
-        for label in labels
-    ]
-
-    
-    # Flatten the lists
-    flat_true_labels = [item for sublist in true_labels for item in sublist]
-    flat_predictions = [item for sublist in true_predictions for item in sublist]
-    
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        flat_true_labels, 
-        flat_predictions, 
-        average='weighted',
-        zero_division=0
-    )
-    
-    return {
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
-    }
-
+    def compute_entity_metrics(self, eval_pred):
+        """
+        Compute entity-level metrics using seqeval.
+        Uses this processor's id2label mapping.
+        """
+        from seqeval.metrics import f1_score, precision_score, recall_score
+        
+        predictions, labels = eval_pred
+        predictions = np.argmax(predictions, axis=2)
+        
+        true_predictions = [
+            [self.id2label[p] for (p, l) in zip(prediction, label) if l != -100]
+            for prediction, label in zip(predictions, labels)
+        ]
+        true_labels = [
+            [self.id2label[l] for l in label if l != -100]
+            for label in labels
+        ]
+        
+        return {
+            'precision': precision_score(true_labels, true_predictions),
+            'recall': recall_score(true_labels, true_predictions), 
+            'f1': f1_score(true_labels, true_predictions),
+        }
+        
 def create_label_list(entity_types: List[str]) -> List[str]:
     """
     Create BIO label list from entity types.

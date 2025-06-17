@@ -30,8 +30,17 @@ from transformers import (
     DataCollatorForTokenClassification
 )
 from pathlib import Path
-from enhance_ocod.bert_utils import NERDataProcessor, compute_metrics, create_label_list
+from enhance_ocod.bert_utils import NERDataProcessor, create_label_list
 import torch
+
+# Add these imports at the top of your file
+import pandas as pd
+import numpy as np
+from sklearn.metrics import classification_report, precision_recall_fscore_support
+from sklearn.metrics import confusion_matrix
+from seqeval.metrics.sequence_labeling import get_entities
+
+
 
 torch.set_float32_matmul_precision('medium')
 
@@ -39,14 +48,14 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 
 model_name = "answerdotai/ModernBERT-base"
 
-train_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / "converted_full_dataset.json") 
-val_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / "training_data_test.json")
+train_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / 'ner_ready' /"ground_truth_dev_set_labels.json") 
+val_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / 'ner_ready' /"ground_truth_test_set_labels.json")
 
 num_train_epochs = 6
 batch_size = 16
 learning_rate = 5e-5
 max_length  = 128
-output_dir = str(SCRIPT_DIR / ".." / "models" / "address_parser_full")
+output_dir = str(SCRIPT_DIR / ".." / "models" / "address_parser_dev")
 entity_types = [
     "building_name",
     "street_name",
@@ -110,7 +119,7 @@ training_args = TrainingArguments(
     logging_steps=50,
     eval_strategy="epoch" if val_dataset else "no",
     eval_steps=50 if val_dataset else None,
-    save_strategy="epoch",
+    save_strategy="best",
     save_steps=200,
     load_best_model_at_end=True if val_dataset else False,
     metric_for_best_model="f1" if val_dataset else None,
@@ -128,8 +137,18 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
     tokenizer=processor.tokenizer,
-    compute_metrics=compute_metrics if val_dataset else None,
+    compute_metrics=processor.compute_entity_metrics if val_dataset else None,
 )
 
 print("Starting training...")
 trainer.train()
+
+
+# After training is complete, save the final model
+final_model_path = "/teamspace/studios/this_studio/enhance_ocod/models/address_parser_dev/final_model"
+
+# Save the model and tokenizer
+trainer.model.save_pretrained(final_model_path)
+processor.tokenizer.save_pretrained(final_model_path)
+
+print(f"Final model saved to: {final_model_path}")
