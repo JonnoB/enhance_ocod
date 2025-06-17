@@ -30,7 +30,7 @@ from transformers import (
     DataCollatorForTokenClassification
 )
 from pathlib import Path
-from enhance_ocod.bert_utils import NERDataProcessor, create_label_list
+from enhance_ocod.bert_utils import NERDataProcessor, create_label_list, evaluate_model_performance
 import torch
 
 # Add these imports at the top of your file
@@ -152,3 +152,15 @@ trainer.model.save_pretrained(final_model_path)
 processor.tokenizer.save_pretrained(final_model_path)
 
 print(f"Final model saved to: {final_model_path}")
+
+
+overall_df, class_df = evaluate_model_performance(
+        model_path=final_model_path,
+        data_path=val_data_path,
+        output_dir=final_model_path,
+        dataset_name="test",
+        max_length=max_length
+    )
+
+print(f"Performance metrics saved to: {final_model_path}")
+print("Training and evaluation complete!")

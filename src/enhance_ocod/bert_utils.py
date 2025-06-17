@@ -1,12 +1,13 @@
 
 import json
 from typing import List, Dict
-from transformers import AutoTokenizer
 from datasets import Dataset
 import numpy as np
-from sklearn.metrics import precision_recall_fscore_support
 from seqeval.metrics import f1_score, precision_score, recall_score, classification_report
-from seqeval.scheme import IOB2
+import torch
+from pathlib import Path
+from transformers import AutoModelForTokenClassification, AutoTokenizer
+import pandas as pd 
 
 class NERDataProcessor:
     def __init__(self, label_list: List[str], tokenizer_name: str = "answerdotai/ModernBERT-base"):
@@ -177,7 +178,7 @@ class NERDataProcessor:
             'recall': recall_score(true_labels, true_predictions), 
             'f1': f1_score(true_labels, true_predictions),
         }
-        
+
 def create_label_list(entity_types: List[str]) -> List[str]:
     """
     Create BIO label list from entity types.
@@ -187,3 +188,119 @@ def create_label_list(entity_types: List[str]) -> List[str]:
         label_list.append(f'B-{entity_type}')  # Beginning
         label_list.append(f'I-{entity_type}')  # Inside
     return label_list
+
+
+def evaluate_model_performance(model_path, data_path, output_dir, dataset_name="test", max_length=128):
+    """
+    Evaluate model and save performance metrics to CSV.
+    
+    Args:
+        model_path: Path to the trained model
+        data_path: Path to the evaluation data JSON file
+        output_dir: Directory to save the CSV results
+        dataset_name: Name of the dataset (for file naming)
+        max_length: Maximum sequence length for tokenization
+    """
+    print(f"Evaluating model on {dataset_name} set...")
+    
+    # Load model and tokenizer
+    model = AutoModelForTokenClassification.from_pretrained(model_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    id2label = model.config.id2label
+    
+    # Load data
+    label_list = list(id2label.values())
+    processor = NERDataProcessor(label_list, tokenizer.name_or_path)
+    processor.tokenizer = tokenizer
+    
+    val_data = processor.load_json_data(data_path)
+    val_dataset = processor.create_dataset(val_data, max_length)
+    
+    print(f"Loaded {len(val_dataset)} examples")
+    
+    # Get predictions
+    print("Getting predictions...")
+    model.eval()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    
+    y_true = []
+    y_pred = []
+    
+    with torch.no_grad():
+        for example in val_dataset:
+            input_ids = torch.tensor([example['input_ids']]).to(device)
+            attention_mask = torch.tensor([example['attention_mask']]).to(device)
+            
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            predictions = torch.argmax(outputs.logits, dim=-1)[0].cpu().numpy()
+            
+            true_labels = []
+            pred_labels = []
+            
+            for pred_id, true_id in zip(predictions, example['labels']):
+                if true_id != -100:
+                    true_labels.append(id2label[true_id])
+                    pred_labels.append(id2label[pred_id])
+            
+            y_true.append(true_labels)
+            y_pred.append(pred_labels)
+    
+    # Calculate metrics
+    overall_f1 = f1_score(y_true, y_pred)
+    overall_precision = precision_score(y_true, y_pred)
+    overall_recall = recall_score(y_true, y_pred)
+    
+    # Get detailed classification report
+    report_dict = classification_report(y_true, y_pred, output_dict=True)
+    
+    # Print results
+    print(f"\n{dataset_name.upper()} SET RESULTS:")
+    print(f"Overall F1: {overall_f1:.4f}")
+    print(f"Overall Precision: {overall_precision:.4f}")  
+    print(f"Overall Recall: {overall_recall:.4f}")
+    print(f"\nPer-class results:")
+    print(classification_report(y_true, y_pred))
+    
+    # Save results
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # 1. Overall performance CSV
+    overall_results = pd.DataFrame([{
+        'model_path': model_path,
+        'dataset': dataset_name,
+        'num_examples': len(val_dataset),
+        'precision': overall_precision,
+        'recall': overall_recall,
+        'f1_score': overall_f1,
+        'evaluation_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+    }])
+    
+    overall_file = output_path / f"{dataset_name}_overall_performance.csv"
+    overall_results.to_csv(overall_file, index=False)
+    
+    # 2. Class-wise performance CSV
+    class_results = []
+    for class_name, metrics in report_dict.items():
+        if isinstance(metrics, dict):  # Skip accuracy (which is just a float)
+            class_results.append({
+                'model_path': model_path,
+                'dataset': dataset_name,
+                'class_name': class_name,
+                'precision': metrics.get('precision', 0),
+                'recall': metrics.get('recall', 0),
+                'f1_score': metrics.get('f1-score', 0),
+                'support': metrics.get('support', 0),
+                'evaluation_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
+    
+    class_df = pd.DataFrame(class_results)
+    class_file = output_path / f"{dataset_name}_class_performance.csv"
+    class_df.to_csv(class_file, index=False)
+    
+    print(f"\nResults saved:")
+    print(f"  Overall: {overall_file}")
+    print(f"  Per-class: {class_file}")
+    
+    return overall_results, class_df
