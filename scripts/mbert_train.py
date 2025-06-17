@@ -51,6 +51,9 @@ model_name = "answerdotai/ModernBERT-base"
 train_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / 'ner_ready' /"ground_truth_dev_set_labels.json") 
 val_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / 'ner_ready' /"ground_truth_test_set_labels.json")
 
+# After training is complete, save the final model
+final_model_path = "/teamspace/studios/this_studio/enhance_ocod/models/address_parser_dev/final_model"
+
 num_train_epochs = 6
 batch_size = 16
 learning_rate = 5e-5
@@ -119,8 +122,9 @@ training_args = TrainingArguments(
     logging_steps=50,
     eval_strategy="epoch" if val_dataset else "no",
     eval_steps=50 if val_dataset else None,
-    save_strategy="best",
-    save_steps=200,
+    save_strategy="epoch", 
+    save_steps=1,  
+    save_total_limit=1, 
     load_best_model_at_end=True if val_dataset else False,
     metric_for_best_model="f1" if val_dataset else None,
     greater_is_better=True,
@@ -142,10 +146,6 @@ trainer = Trainer(
 
 print("Starting training...")
 trainer.train()
-
-
-# After training is complete, save the final model
-final_model_path = "/teamspace/studios/this_studio/enhance_ocod/models/address_parser_dev/final_model"
 
 # Save the model and tokenizer
 trainer.model.save_pretrained(final_model_path)

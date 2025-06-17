@@ -5,7 +5,7 @@ import numpy as np
 import time
 import zipfile
 from typing import Optional, List, Callable
-from preprocess import preprocess_text_for_tokenization
+from enhance_ocod.preprocess import preprocess_text_for_tokenization
 #This  module is supposed to contain all the relevant functions for parsing the LabeledS json file 
 
 ##

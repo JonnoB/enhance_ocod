@@ -4,24 +4,22 @@ from transformers import AutoModelForTokenClassification, AutoTokenizer
 from datasets import Dataset
 from typing import Dict, List, Optional
 from tqdm import tqdm
-
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
-from datasets import Dataset
-import torch
-
 
 class AddressParserInference:
-    def __init__(self, model_path: str, device: Optional[str] = None):
+    def __init__(self, model_path: str, device: Optional[str] = None, max_length: int = 128):
         """
         Initialize the inference class with trained model
         
         Args:
             model_path: Path to the trained model directory
             device: Device to use ('cuda', 'cpu', or None for auto)
+            max_length: Maximum sequence length (should match training)
         """
         self.model_path = model_path
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        self.max_length = max_length
         self.model = None
         self.tokenizer = None
         self.id2label = None
@@ -30,138 +28,85 @@ class AddressParserInference:
     
     def _load_model(self):
         """Load the trained model and tokenizer"""
-        #print(f"Loading model from {self.model_path}")
-        
-        # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-        
-        # Load model
         self.model = AutoModelForTokenClassification.from_pretrained(self.model_path)
         self.model.to(self.device)
         self.model.eval()
-        
-        # Get label mappings
         self.id2label = self.model.config.id2label
         self.label2id = self.model.config.label2id
-        
-        #print(f"Model loaded on {self.device}. Labels: {list(self.label2id.keys())}")
     
-    def tokenize_batch(self, examples):
-        """Tokenize batch of examples for dataset mapping"""
-        return self.tokenizer(
-            examples['address'],
-            padding=True,
-            truncation=True,
-            max_length=128,
-            return_tensors="pt",
-            return_offsets_mapping=True
-        )
-    
-    def predict_batch(self, batch_size: int = 32):
+    def _extract_entities_with_word_alignment(self, original_text: str, tokens: List[str], 
+                                            predicted_labels: List[str], offset_mapping) -> List[Dict]:
         """
-        Predict function for batched processing
-        
-        Args:
-            batch_size: Batch size for inference
-            
-        Returns:
-            Function to be used with dataset.map()
+        Extract entities with proper subword token handling - matches training logic
         """
-        def _predict_batch(batch):
-            addresses = batch['address']
-            indices = batch['index']
-            batch_size_actual = len(addresses)
-            
-            # Tokenize
-            inputs = self.tokenizer(
-                addresses,
-                padding=True,
-                truncation=True,
-                max_length=1024,
-                return_tensors="pt",
-                return_offsets_mapping=True
-            )
-            
-            # Move to device
-            model_inputs = {k: v.to(self.device) for k, v in inputs.items() if k != 'offset_mapping'}
-            
-            # Predict
-            with torch.no_grad():
-                outputs = self.model(**model_inputs)
-                predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
-                predicted_token_class_ids = predictions.argmax(dim=-1)
-            
-            # Process results for each item in batch
-            batch_results = []
-            for i in range(batch_size_actual):
-                address = addresses[i]
-                index = indices[i]
-                
-                # Get tokens and predictions for this item
-                input_ids = inputs["input_ids"][i]
-                tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
-                predicted_labels = [self.id2label[pred.item()] for pred in predicted_token_class_ids[i]]
-                offset_mapping = inputs["offset_mapping"][i]
-                
-                # Extract entities
-                entities = self._extract_entities(address, tokens, predicted_labels, offset_mapping)
-                
-                batch_results.append({
-                    "row_index": index,
-                    "original_address": address,
-                    "entities": entities,
-                    "parsed_components": self._group_entities_by_type(entities)
-                })
-            
-            return {
-                "results": batch_results
-            }
-        
-        return _predict_batch
-    
-    def _extract_entities(self, original_text: str, tokens: List[str], labels: List[str], offset_mapping) -> List[Dict]:
-        """Extract entities from predictions"""
         entities = []
         current_entity = None
         
-        for i, (token, label, offset) in enumerate(zip(tokens, labels, offset_mapping)):
+        # Track word boundaries for proper entity extraction
+        previous_word_start = None
+        
+        for i, (token, label, offset) in enumerate(zip(tokens, predicted_labels, offset_mapping)):
             if token in ['[CLS]', '[SEP]', '[PAD]']:
                 continue
                 
-            start_pos, end_pos = offset.tolist()
+            if hasattr(offset, 'tolist'):
+                start_pos, end_pos = offset.tolist()
+            else:
+                start_pos, end_pos = offset
             
-            # Skip if offset is [0, 0] (special tokens)
-            if start_pos == 0 and end_pos == 0 and i > 0:
+            # Skip invalid offsets
+            if start_pos == end_pos or start_pos >= len(original_text) or end_pos > len(original_text):
                 continue
                 
+            # Determine if this token starts a new word (not a subword continuation)
+            is_word_start = (previous_word_start != start_pos) if previous_word_start is not None else True
+            
             if label.startswith('B-'):
-                # Start of new entity
+                # Beginning of new entity - always start new entity
                 if current_entity:
                     entities.append(current_entity)
                 
-                entity_type = label[2:]  # Remove 'B-' prefix
+                entity_type = label[2:]
                 current_entity = {
-                    "type": entity_type,
-                    "text": original_text[start_pos:end_pos],
-                    "start": start_pos,
-                    "end": end_pos
+                    'type': entity_type,
+                    'start': start_pos,
+                    'end': end_pos,
+                    'text': original_text[start_pos:end_pos]
                 }
+                
             elif label.startswith('I-') and current_entity:
-                # Continuation of current entity
-                entity_type = label[2:]  # Remove 'I-' prefix
-                if entity_type == current_entity["type"]:
-                    current_entity["text"] = original_text[current_entity["start"]:end_pos]
-                    current_entity["end"] = end_pos
+                # Inside entity - extend current entity
+                entity_type = label[2:]
+                if entity_type == current_entity['type']:
+                    # Extend entity to include this token
+                    current_entity['end'] = end_pos
+                    current_entity['text'] = original_text[current_entity['start']:end_pos]
+                else:
+                    # Different entity type - treat as B- (beginning of new entity)
+                    entities.append(current_entity)
+                    current_entity = {
+                        'type': entity_type,
+                        'start': start_pos,
+                        'end': end_pos,
+                        'text': original_text[start_pos:end_pos]
+                    }
             else:
-                # O label or end of entity
+                # 'O' label - outside entity
                 if current_entity:
                     entities.append(current_entity)
                     current_entity = None
+            
+            # Track word boundaries
+            if token.startswith('##'):  # Subword token
+                pass  # Don't update word start
+            else:
+                previous_word_start = start_pos
         
         # Don't forget the last entity
         if current_entity:
             entities.append(current_entity)
-        
+            
         return entities
     
     def _group_entities_by_type(self, entities: List[Dict]) -> Dict:
@@ -180,17 +125,20 @@ class AddressParserInference:
         
         return grouped
 
+
 def parse_addresses_batch(
     df: pd.DataFrame,
     model_path: str,
     target_column: str = "address", 
     index_column: Optional[str] = None,
     batch_size: int = 256,
+    max_length: int = 128,  # Should match training
     use_fp16: bool = True,
-    show_progress: bool = True
+    show_progress: bool = True,
+    num_workers: int = 4
 ) -> Dict:
     """
-    Production-ready batch address parsing with mixed precision optimization.
+    Production-ready batch address parsing with consistent tokenization and performance optimization.
     
     Args:
         df: DataFrame containing addresses
@@ -198,8 +146,10 @@ def parse_addresses_batch(
         target_column: Column name containing addresses
         index_column: Column to use as index (optional)
         batch_size: Batch size for processing
+        max_length: Maximum sequence length (should match training)
         use_fp16: Enable mixed precision for speed
         show_progress: Show progress bar
+        num_workers: Number of workers for data loading
     
     Returns:
         Dict with summary and results
@@ -210,13 +160,13 @@ def parse_addresses_batch(
     except RuntimeError:
         pass
     
-    parser = AddressParserInference(model_path)
+    parser = AddressParserInference(model_path, max_length=max_length)
     
     # Setup indexing
     if index_column is None and "datapoint_id" in df.columns:
         index_column = "datapoint_id"
     
-    # Prepare dataset
+    # Prepare dataset - FIXED: Use consistent max_length
     dataset_dict = {
         "address": df[target_column].fillna("").astype(str).tolist(),
         "row_index": df[index_column].tolist() if index_column else df.index.tolist()
@@ -227,16 +177,13 @@ def parse_addresses_batch(
     
     dataset = Dataset.from_dict(dataset_dict)
     
-    # Tokenization function
+    # FIXED: Tokenization function that matches training exactly
     def tokenize_function(examples):
-        from transformers import AutoTokenizer
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        
-        tokenized = tokenizer(
+        tokenized = parser.tokenizer(
             examples["address"],
-            padding=False,
+            padding=False,  # We'll pad in collate_fn
             truncation=True,
-            max_length=128,
+            max_length=max_length,  # Use consistent max_length
             return_offsets_mapping=True
         )
         
@@ -248,16 +195,17 @@ def parse_addresses_batch(
         
         return tokenized
     
-    # Apply tokenization
+    # Apply tokenization with multiprocessing
     try:
         tokenized_dataset = dataset.map(
             tokenize_function,
             batched=True,
             batch_size=1000,
-            num_proc=4,
+            num_proc=num_workers,
             remove_columns=[]
         )
     except Exception:
+        # Fallback without multiprocessing
         tokenized_dataset = dataset.map(
             tokenize_function,
             batched=True,
@@ -265,59 +213,7 @@ def parse_addresses_batch(
             remove_columns=[]
         )
     
-    # Entity extraction
-    def extract_entities(address, tokens, predicted_labels, offset_mapping):
-        entities = []
-        current_entity = None
-        
-        for token, label, offset in zip(tokens, predicted_labels, offset_mapping):
-            if token in ['[CLS]', '[SEP]', '[PAD]']:
-                continue
-                
-            if hasattr(offset, 'tolist'):
-                start_pos, end_pos = offset.tolist()
-            else:
-                start_pos, end_pos = offset
-            
-            if start_pos == end_pos:
-                continue
-                
-            if label.startswith('B-'):
-                if current_entity:
-                    entities.append(current_entity)
-                
-                entity_type = label[2:]
-                current_entity = {
-                    'type': entity_type,
-                    'start': start_pos,
-                    'end': end_pos,
-                    'text': address[start_pos:end_pos]
-                }
-                
-            elif label.startswith('I-') and current_entity:
-                entity_type = label[2:]
-                if entity_type == current_entity['type']:
-                    current_entity['end'] = end_pos
-                    current_entity['text'] = address[current_entity['start']:end_pos]
-                else:
-                    entities.append(current_entity)
-                    current_entity = {
-                        'type': entity_type,
-                        'start': start_pos,
-                        'end': end_pos,
-                        'text': address[start_pos:end_pos]
-                    }
-            else:
-                if current_entity:
-                    entities.append(current_entity)
-                    current_entity = None
-        
-        if current_entity:
-            entities.append(current_entity)
-            
-        return entities
-    
-    # Collate function
+    # FIXED: Collate function with proper padding to max_length
     def collate_fn(batch):
         input_ids = [item["input_ids"] for item in batch]
         attention_mask = [item["attention_mask"] for item in batch]
@@ -325,48 +221,55 @@ def parse_addresses_batch(
         row_indices = [item["row_index"] for item in batch]
         addresses = [item["original_address"] for item in batch]
         
-        max_len = max(len(ids) for ids in input_ids)
+        # Pad to max_length (consistent with training)
         padded_input_ids = []
         padded_attention_mask = []
+        padded_offset_mapping = []
         
-        for ids, mask in zip(input_ids, attention_mask):
-            pad_len = max_len - len(ids)
-            padded_input_ids.append(ids + [parser.tokenizer.pad_token_id] * pad_len)
-            padded_attention_mask.append(mask + [0] * pad_len)
+        for ids, mask, offsets in zip(input_ids, attention_mask, offset_mapping):
+            pad_len = max_length - len(ids)
+            if pad_len > 0:
+                padded_input_ids.append(ids + [parser.tokenizer.pad_token_id] * pad_len)
+                padded_attention_mask.append(mask + [0] * pad_len)
+                padded_offset_mapping.append(offsets + [(0, 0)] * pad_len)
+            else:
+                padded_input_ids.append(ids[:max_length])
+                padded_attention_mask.append(mask[:max_length])
+                padded_offset_mapping.append(offsets[:max_length])
         
         return {
             "input_ids": torch.tensor(padded_input_ids),
             "attention_mask": torch.tensor(padded_attention_mask),
-            "offset_mapping": offset_mapping,
+            "offset_mapping": padded_offset_mapping,  # Keep as list for processing
             "addresses": addresses,
             "row_indices": row_indices,
             "datapoint_ids": [item.get("datapoint_id") for item in batch] if "datapoint_id" in batch[0] else None
         }
     
-    # Create DataLoader
+    # Create DataLoader with performance optimizations
     dataloader = DataLoader(
         tokenized_dataset,
         batch_size=batch_size,
         collate_fn=collate_fn,
-        num_workers=0,
-        pin_memory=True,
+        num_workers=0,  # Set to 0 for GPU inference to avoid issues
+        pin_memory=torch.cuda.is_available(),
         shuffle=False
     )
     
-    # Process batches
+    # Process batches with performance optimizations
     all_results = []
     successful_parses = 0
     
     iterator = tqdm(dataloader, desc="Processing addresses") if show_progress else dataloader
     
     for batch in iterator:
-        # Move to GPU
+        # Move to GPU with non-blocking transfer
         input_ids = batch["input_ids"].to(parser.device, non_blocking=True)
         attention_mask = batch["attention_mask"].to(parser.device, non_blocking=True)
         
-        # Inference
+        # MAINTAINED: FP16 inference for speed
         with torch.no_grad():
-            if use_fp16:
+            if use_fp16 and parser.device != 'cpu':
                 with torch.amp.autocast('cuda'):
                     outputs = parser.model(input_ids=input_ids, attention_mask=attention_mask)
             else:
@@ -375,12 +278,14 @@ def parse_addresses_batch(
             predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
             predicted_token_class_ids = predictions.argmax(dim=-1)
         
-        # Move to CPU
+        # Move to CPU for processing
         predicted_token_class_ids_cpu = predicted_token_class_ids.cpu()
         input_ids_cpu = input_ids.cpu()
-        torch.cuda.synchronize()
         
-        # Extract entities
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        
+        # FIXED: Extract entities with proper tokenization handling
         for j in range(len(batch["addresses"])):
             address = batch["addresses"][j]
             tokens = parser.tokenizer.convert_ids_to_tokens(input_ids_cpu[j])
@@ -388,17 +293,20 @@ def parse_addresses_batch(
             offset_mapping = batch["offset_mapping"][j]
             
             try:
-                entities = extract_entities(address, tokens, predicted_labels, offset_mapping)
+                entities = parser._extract_entities_with_word_alignment(
+                    address, tokens, predicted_labels, offset_mapping
+                )
                 if len(entities) > 0:
                     successful_parses += 1
-            except Exception:
+            except Exception as e:
                 entities = []
+                print(f"Error processing address: {address[:50]}... Error: {e}")
             
             result = {
                 "row_index": batch["row_indices"][j],
                 "original_address": address,
                 "entities": entities,
-                "parsed_components": parser._group_entities_by_type(entities) if hasattr(parser, '_group_entities_by_type') else {}
+                "parsed_components": parser._group_entities_by_type(entities)
             }
             
             if batch["datapoint_ids"] and batch["datapoint_ids"][j]:
@@ -406,9 +314,10 @@ def parse_addresses_batch(
             
             all_results.append(result)
         
-        # Cleanup
+        # MAINTAINED: Memory cleanup
         del outputs, predictions, predicted_token_class_ids
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     return {
         "summary": {
@@ -425,12 +334,6 @@ def convert_to_entity_dataframe(modernbert_results: Dict, batch_size: int = 5000
     """
     Converts ModernBERT parsing results to a structured entity DataFrame
     Optimized for large datasets (hundreds of thousands of entities)
-    
-    Args:
-        modernbert_results: Dictionary output from parse_addresses_from_csv
-        
-    Returns:
-        pandas DataFrame with structured entity data
     """
     
     # Pre-calculate total entities for memory allocation
@@ -453,7 +356,7 @@ def convert_to_entity_dataframe(modernbert_results: Dict, batch_size: int = 5000
     processed = 0
     
     for result in modernbert_results["results"]:
-        datapoint_id = result["row_index"]
+        datapoint_id = result.get("datapoint_id") or result["row_index"]
         original_address = result["original_address"]
         entities = result["entities"]
         
