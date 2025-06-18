@@ -29,8 +29,8 @@ output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
 parsed_cache_dir = SCRIPT_DIR.parent / "data" / "parsed_addresses_cache"
 parsed_cache_dir.mkdir(parents=True, exist_ok=True)
 
-model_path = SCRIPT_DIR.parent / "models" / "address_parser" / "checkpoint-750"
-ONSPD_path = SCRIPT_DIR.parent / "data" / "ONSPD_FEB_2025.zip"
+model_path = SCRIPT_DIR.parent / "models" / "address_parser_dev" / "final_model"
+ONSPD_path = SCRIPT_DIR.parent / "data" / "ONSPD_FEB_2025.zip" 
 price_paid_path = SCRIPT_DIR.parent / "data" / "price_paid_data" / "price_paid_complete_may_2025.csv"
 processed_price_paid_dir = SCRIPT_DIR.parent / "data" / "processed_price_paid"
 voa_path = SCRIPT_DIR.parent / "data" / "2023_non_domestic_rating_list_entries.zip"

@@ -1,5 +1,5 @@
 """
-Clean entity-level error analysis using seqeval - no more tokenization artifacts!
+
 """
 
 import pandas as pd
@@ -364,28 +364,28 @@ def main():
     """
     # Get evaluation results
     y_true, y_pred, val_data, tokenizer = evaluate_ner_simple()
-    
-    # Analyze errors with proper text extraction
-    errors_df = analyze_entity_errors_improved(y_true, y_pred, val_data, tokenizer)
-    
-    # Show human-readable analysis
-    show_human_readable_analysis(errors_df)
-    
-    # Save results
-    output_file = "human_readable_errors.csv"
-    errors_df.to_csv(output_file, index=False)
-    print(f"\nHuman-readable errors saved to: {output_file}")
-    
-    # Show first few examples
-    print(f"\n" + "="*60)
-    print("FIRST 5 ERRORS FOR REVIEW")
-    print("="*60)
-    
-    for i, (_, error) in enumerate(errors_df.head(5).iterrows()):
-        print(f"\n{i+1}. {error['issue']}")
-        print(f"   Question: {error['question']}")
-        print(f"   Context: {error['text_preview']}")
-        print(f"   [Mark in CSV: model_correct = yes/no]")
-
+    """   
+        # Analyze errors with proper text extraction
+        errors_df = analyze_entity_errors_improved(y_true, y_pred, val_data, tokenizer)
+        
+        # Show human-readable analysis
+        show_human_readable_analysis(errors_df)
+        
+        # Save results
+        output_file = "human_readable_errors.csv"
+        errors_df.to_csv(output_file, index=False)
+        print(f"\nHuman-readable errors saved to: {output_file}")
+        
+        # Show first few examples
+        print(f"\n" + "="*60)
+        print("FIRST 5 ERRORS FOR REVIEW")
+        print("="*60)
+        
+        for i, (_, error) in enumerate(errors_df.head(5).iterrows()):
+            print(f"\n{i+1}. {error['issue']}")
+            print(f"   Question: {error['question']}")
+            print(f"   Context: {error['text_preview']}")
+            print(f"   [Mark in CSV: model_correct = yes/no]")
+    """
 if __name__ == "__main__":
     main()

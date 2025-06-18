@@ -40,7 +40,7 @@ class NERDataProcessor:
         
         # Map tokens to labels
         previous_word_idx = None
-        current_entity = None
+        current_entity_span = None  # Track the actual entity span, not just any span
         
         for token_idx, word_idx in enumerate(word_ids):
             if word_idx is None:  # Special tokens ([CLS], [SEP], [PAD])
@@ -70,18 +70,19 @@ class NERDataProcessor:
             if entity_span is None:
                 # Token is outside any entity
                 labels[token_idx] = self.label2id['O']
-                current_entity = None
+                current_entity_span = None
             else:
                 # Token is inside an entity
                 entity_label = entity_span['label']
                 
-                # Determine if this is the beginning of an entity or continuation
-                if (current_entity != entity_span or 
-                    word_idx != previous_word_idx or 
+                # FIXED LOGIC: Only use B- tag at the very start of an entity span
+                # OR when switching between different entity spans
+                if (current_entity_span is None or 
+                    current_entity_span != entity_span or
                     token_start == entity_span['start']):
-                    # This is the beginning of an entity
+                    # This is the beginning of a new entity
                     labels[token_idx] = self.label2id.get(f'B-{entity_label}', self.label2id['O'])
-                    current_entity = entity_span
+                    current_entity_span = entity_span
                 else:
                     # This is a continuation of the current entity
                     labels[token_idx] = self.label2id.get(f'I-{entity_label}', self.label2id['O'])

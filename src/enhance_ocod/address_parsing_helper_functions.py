@@ -336,6 +336,12 @@ def identify_multi_addresses(all_entities):
     merge(xx_to_yy_unit_counts, how = 'left', left_on = "datapoint_id", right_index = True).fillna(0)
 
 
+    #Ensures the neccesary columns are present
+    required_columns = ['building_name', 'unit_id', 'street_number']
+    for col in required_columns:
+        if col not in multi_check_df.columns:
+            multi_check_df[col] = 0
+
     del xx_to_yy_street_counts
     del xx_to_yy_unit_counts
 
