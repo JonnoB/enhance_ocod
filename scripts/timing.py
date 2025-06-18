@@ -181,8 +181,9 @@ else:
         df=ocod_data,
         model_path=str(model_path),
         target_column="property_address",
-        batch_size=512,
-        use_fp16=True
+        batch_size=2048,
+        use_fp16=True,
+        max_length = 1024
     )
     
     test = timed_convert_to_entity_dataframe(results)

@@ -4,23 +4,17 @@ from transformers import AutoModelForTokenClassification, AutoTokenizer
 from typing import Dict, List, Optional
 from tqdm import tqdm
 from seqeval.metrics.sequence_labeling import get_entities
+import numpy as np
 
 class AddressParserInference:
     """
-
+    Batch-optimized address parser using ModernBERT
     """
     
     def __init__(self, model_path: str, device: Optional[str] = None, use_fp16: bool = True, 
                  max_length: int = 512, stride: int = 50):
         """
         Initialize using direct model inference.
-        
-        Args:
-            model_path: Path to trained ModernBERT model
-            device: CUDA/CPU device
-            use_fp16: Half precision for GPU inference
-            max_length: Max sequence length
-            stride: Overlap for sliding window (for future chunking)
         """
         self.model_path = model_path
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
@@ -42,110 +36,179 @@ class AddressParserInference:
         
         print(f"AddressParserInference initialized: {self.device}, FP16={self.use_fp16}")
     
-    def _predict_tokens(self, text: str) -> tuple[List[str], List[tuple]]:
+    def _predict_batch_tokens(self, texts: List[str]) -> List[tuple]:
         """
-        Get token predictions and offset mappings for text.
+        Get token predictions and offset mappings for a batch of texts.
+        This is the key optimization - process entire batch in one forward pass.
         """
-        # Tokenize
-        encoding = self.tokenizer(
-            text,
+        # Tokenize entire batch
+        batch_encoding = self.tokenizer(
+            texts,
             add_special_tokens=True,
             truncation=True,
-            padding=False,
+            padding=True,  # Pad to max length in batch
             max_length=self.max_length,
             return_tensors='pt',
             return_offsets_mapping=True
         )
         
-        input_ids = encoding['input_ids'].to(self.device)
-        attention_mask = encoding['attention_mask'].to(self.device)
-        offset_mapping = encoding['offset_mapping'][0].cpu().numpy()
+        input_ids = batch_encoding['input_ids'].to(self.device)
+        attention_mask = batch_encoding['attention_mask'].to(self.device)
+        offset_mappings = batch_encoding['offset_mapping'].cpu().numpy()
         
-        # Get predictions
+        # Single forward pass for entire batch
         with torch.no_grad():
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-            predictions = torch.argmax(outputs.logits, dim=-1)[0].cpu().numpy()
+            predictions = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
         
-        # Process tokens - skip special tokens
-        pred_labels = []
-        valid_offsets = []
-        
-        for i in range(len(predictions)):
-            # Skip special tokens: [CLS] and [SEP] have offset_mapping of (0,0)
-            if (offset_mapping[i][0] == 0 and offset_mapping[i][1] == 0):
-                continue
+        # Process results for each item in batch
+        batch_results = []
+        for i in range(len(texts)):
+            pred_labels = []
+            valid_offsets = []
             
-            pred_labels.append(self.id2label[predictions[i]])
-            valid_offsets.append(offset_mapping[i])
+            for j in range(len(predictions[i])):
+                # Skip special tokens and padding
+                if attention_mask[i][j] == 0:  # Skip padding
+                    break
+                if (offset_mappings[i][j][0] == 0 and offset_mappings[i][j][1] == 0):  # Skip special tokens
+                    continue
+                
+                pred_labels.append(self.id2label[predictions[i][j]])
+                valid_offsets.append(offset_mappings[i][j])
+            
+            batch_results.append((pred_labels, valid_offsets))
         
-        return pred_labels, valid_offsets
+        return batch_results
 
     def predict_single_address(self, address: str, row_index: Optional[int] = None) -> Dict:
         """
-        Predict entities for a single address.
-        
-        Simple workflow now that training uses proper BIO tagging:
-        1. Get token predictions
-        2. Use seqeval.get_entities() to extract entities
-        3. Convert to character positions using offset mappings
+        Predict entities for a single address - now uses batch method with batch_size=1
         """
+        batch_results = self.predict_batch([address], batch_size=1, show_progress=False)
+        result = batch_results[0]
+        if row_index is not None:
+            result["row_index"] = row_index
+        return result
+
+    def predict_batch(self, addresses: List[str], batch_size: int = 32, 
+                     show_progress: bool = True) -> List[Dict]:
+        """
+        Predict entities for a batch of addresses using true batch inference.
+        """
+        results = []
+        total = len(addresses)
+        
+        if show_progress:
+            pbar = tqdm(total=total, desc="Processing addresses")
+        
+        for i in range(0, total, batch_size):
+            batch_addresses = addresses[i:i + batch_size]
+            batch_results = self._process_address_batch(batch_addresses, start_index=i)
+            results.extend(batch_results)
+            
+            if show_progress:
+                pbar.update(len(batch_addresses))
+        
+        if show_progress:
+            pbar.close()
+        
+        return results
+    
+    def _process_address_batch(self, addresses: List[str], start_index: int = 0) -> List[Dict]:
+        """
+        Process a batch of addresses with true batch inference.
+        """
+        batch_results = []
+        
         try:
             # Handle empty addresses
-            if not address or address.strip() == "":
-                return {
-                    "row_index": row_index,
+            non_empty_addresses = []
+            non_empty_indices = []
+            
+            for i, address in enumerate(addresses):
+                if not address or address.strip() == "":
+                    batch_results.append({
+                        "row_index": start_index + i,
+                        "original_address": address,
+                        "entities": [],
+                        "parsed_components": {},
+                        "error": "Empty address"
+                    })
+                else:
+                    non_empty_addresses.append(address)
+                    non_empty_indices.append(i)
+            
+            if not non_empty_addresses:
+                return batch_results
+            
+            # Get predictions for all non-empty addresses in one batch
+            batch_predictions = self._predict_batch_tokens(non_empty_addresses)
+            
+            # Process each address result
+            for i, (pred_labels, offsets) in enumerate(batch_predictions):
+                original_index = non_empty_indices[i]
+                address = non_empty_addresses[i]
+                
+                # Use seqeval to extract entities
+                entities_seqeval = get_entities(pred_labels)
+                
+                # Convert to our format with character positions
+                entities = []
+                for entity_type, start_idx, end_idx in entities_seqeval:
+                    if start_idx < len(offsets) and end_idx < len(offsets):
+                        char_start = offsets[start_idx][0]
+                        char_end = offsets[end_idx][1]
+                        entity_text = address[char_start:char_end].strip()
+                        
+                        entities.append({
+                            "type": entity_type,
+                            "text": entity_text,
+                            "start": int(char_start),
+                            "end": int(char_end),
+                            "confidence": 1.0
+                        })
+                
+                result = {
+                    "row_index": start_index + original_index,
+                    "original_address": address,
+                    "entities": entities,
+                    "parsed_components": self._group_entities_by_type(entities)
+                }
+                
+                # Insert result at correct position
+                while len(batch_results) <= original_index:
+                    batch_results.append(None)
+                batch_results[original_index] = result
+            
+            # Fill any remaining None slots (shouldn't happen but safety check)
+            for i in range(len(batch_results)):
+                if batch_results[i] is None:
+                    batch_results[i] = {
+                        "row_index": start_index + i,
+                        "original_address": addresses[i] if i < len(addresses) else "",
+                        "entities": [],
+                        "parsed_components": {},
+                        "error": "Processing error"
+                    }
+                    
+        except Exception as e:
+            import traceback
+            print(f"Error processing batch starting at index {start_index}: {str(e)}")
+            traceback.print_exc()
+            
+            # Return error results for entire batch
+            batch_results = []
+            for i, address in enumerate(addresses):
+                batch_results.append({
+                    "row_index": start_index + i,
                     "original_address": address,
                     "entities": [],
                     "parsed_components": {},
-                    "error": "Empty address"
-                }
-            
-            # Step 1: Get token predictions and offsets
-            pred_labels, offsets = self._predict_tokens(address)
-            
-            # Step 2: Use seqeval to extract entities
-            entities_seqeval = get_entities(pred_labels)
-            
-            # Step 3: Convert seqeval results to our format with character positions
-            entities = []
-            for entity_type, start_idx, end_idx in entities_seqeval:
-                # Bounds check
-                if start_idx < len(offsets) and end_idx < len(offsets):
-                    # Get character positions from offset mapping
-                    char_start = offsets[start_idx][0]
-                    char_end = offsets[end_idx][1]
-                    entity_text = address[char_start:char_end].strip()
-                    
-                    entities.append({
-                        "type": entity_type,
-                        "text": entity_text,
-                        "start": int(char_start),
-                        "end": int(char_end),
-                        "confidence": 1.0
-                    })
-            
-            result = {
-                "original_address": address,
-                "entities": entities,
-                "parsed_components": self._group_entities_by_type(entities)
-            }
-            
-            if row_index is not None:
-                result["row_index"] = row_index
-                
-            return result
-            
-        except Exception as e:
-            import traceback
-            print(f"Error processing address (row {row_index}): {str(e)}")
-            traceback.print_exc()
-            return {
-                "row_index": row_index,
-                "original_address": address,
-                "entities": [],
-                "parsed_components": {},
-                "error": str(e)
-            }
+                    "error": str(e)
+                })
+        
+        return batch_results
 
     def _group_entities_by_type(self, entities: List[Dict]) -> Dict[str, List[str]]:
         """
@@ -159,34 +222,6 @@ class AddressParserInference:
             grouped[entity_type].append(entity['text'])
         return grouped
 
-    def predict_batch(self, addresses: List[str], batch_size: int = 32, 
-                     show_progress: bool = True) -> List[Dict]:
-        """
-        Predict entities for a batch of addresses.
-        """
-        results = []
-        total = len(addresses)
-        
-        if show_progress:
-            from tqdm import tqdm
-            pbar = tqdm(total=total, desc="Processing addresses")
-        
-        for i in range(0, total, batch_size):
-            batch_addresses = addresses[i:i + batch_size]
-            
-            for j, address in enumerate(batch_addresses):
-                row_index = i + j
-                result = self.predict_single_address(address, row_index)
-                results.append(result)
-                
-                if show_progress:
-                    pbar.update(1)
-        
-        if show_progress:
-            pbar.close()
-        
-        return results
-
     def get_config(self) -> Dict:
         """Return configuration for summary reporting."""
         return {
@@ -197,6 +232,7 @@ class AddressParserInference:
             "stride": self.stride
         }
 
+# The parse_addresses_batch function remains the same
 def parse_addresses_batch(
     df: pd.DataFrame,
     model_path: str,
@@ -231,7 +267,7 @@ def parse_addresses_batch(
     # Create datapoint_id mapping if needed
     datapoint_ids = df["datapoint_id"].tolist() if "datapoint_id" in df.columns else None
     
-    # Process all addresses at once - the predict_batch method handles batching internally
+    # Process all addresses with true batch inference
     all_results = parser.predict_batch(addresses, batch_size=batch_size, show_progress=show_progress)
     
     # Update results with proper indexing and datapoint_ids
@@ -271,8 +307,6 @@ def parse_addresses_batch(
         },
         "results": all_results
     }
-
-
 def convert_to_entity_dataframe(results: Dict, batch_size: int = 50000) -> pd.DataFrame:
     """
     Convert parsing results to structured entity DataFrame.
