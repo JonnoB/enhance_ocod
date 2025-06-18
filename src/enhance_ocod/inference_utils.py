@@ -7,10 +7,7 @@ from seqeval.metrics.sequence_labeling import get_entities
 
 class AddressParserInference:
     """
-    Address parser using direct model inference.
-    
-    Now that training uses proper BIO tagging (B- only at entity start, I- for continuation),
-    we don't need complex post-processing to group adjacent entities.
+
     """
     
     def __init__(self, model_path: str, device: Optional[str] = None, use_fp16: bool = True, 
@@ -190,6 +187,15 @@ class AddressParserInference:
         
         return results
 
+    def get_config(self) -> Dict:
+        """Return configuration for summary reporting."""
+        return {
+            "model_path": self.model_path,
+            "device": self.device,
+            "use_fp16": self.use_fp16,
+            "max_length": self.max_length,
+            "stride": self.stride
+        }
 
 def parse_addresses_batch(
     df: pd.DataFrame,
@@ -204,10 +210,6 @@ def parse_addresses_batch(
 ) -> Dict:
     """
     Batch address parsing using the AddressParserInference class.
-    
-    NOTE: This function is unchanged and works with the new inference class.
-    The "batch_size" here is for memory management and progress reporting,
-    not for model batching (which happens one-by-one in predict_batch).
     """
     
     # Initialize parser
@@ -229,42 +231,26 @@ def parse_addresses_batch(
     # Create datapoint_id mapping if needed
     datapoint_ids = df["datapoint_id"].tolist() if "datapoint_id" in df.columns else None
     
-    # Process in batches for memory management
-    all_results = []
+    # Process all addresses at once - the predict_batch method handles batching internally
+    all_results = parser.predict_batch(addresses, batch_size=batch_size, show_progress=show_progress)
+    
+    # Update results with proper indexing and datapoint_ids
     successful_parses = 0
     errors = []
     
-    if show_progress:
-        progress_bar = tqdm(total=len(addresses), desc="Processing addresses")
-    
-    for i in range(0, len(addresses), batch_size):
-        batch_addresses = addresses[i:i+batch_size]
-        batch_indices = indices[i:i+batch_size]
+    for i, result in enumerate(all_results):
+        # Update with proper index
+        if index_column:
+            result["original_index"] = indices[i]
         
-        # Use the class batch method
-        batch_results = parser.predict_batch(batch_addresses, batch_indices)
+        # Add datapoint_id if available
+        if datapoint_ids is not None:
+            result["datapoint_id"] = datapoint_ids[i]
         
-        for j, result in enumerate(batch_results):
-            # Add datapoint_id if available
-            if datapoint_ids is not None:
-                result["datapoint_id"] = datapoint_ids[i + j]
-            
-            all_results.append(result)
-            
-            if "error" in result:
-                errors.append((i + j, result["error"]))
-            elif len(result["entities"]) > 0:
-                successful_parses += 1
-        
-        if show_progress:
-            progress_bar.update(len(batch_addresses))
-        
-        # Memory cleanup for FP16
-        if parser.use_fp16 and i % (batch_size * 20) == 0:
-            torch.cuda.empty_cache()
-    
-    if show_progress:
-        progress_bar.close()
+        if "error" in result:
+            errors.append((i, result["error"]))
+        elif len(result["entities"]) > 0:
+            successful_parses += 1
     
     # Print error summary if any
     if errors:
@@ -281,7 +267,6 @@ def parse_addresses_batch(
             "failed_parses": len(addresses) - successful_parses,
             "success_rate": successful_parses / len(addresses) if len(addresses) > 0 else 0,
             "batch_size_used": batch_size,
-            "parser_config": parser.get_config(),
             "errors": len(errors)
         },
         "results": all_results

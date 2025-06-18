@@ -124,7 +124,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         target_column="property_address",
         batch_size=64,  # Increased batch size since we're using FP16
         use_fp16=True,
-        max_length=512,  # Explicit control
+        max_length=1024,  # Explicit control
         stride=50
     )
 
