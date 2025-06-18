@@ -305,7 +305,7 @@ def massaged_address_match(ocod_data, voa_data, target_lad):
     
 def find_filter_type(street_num):
  #gets the highest street number and uses it to work out if the property is on the odd or even side of the street, or if that rule is ignore and it is all numbers
-    values = [int(x) for x in street_num.split("-")]
+    values = [int(x) for x in street_num.replace("-", " ").split() if x.strip()]
     if (max(values)%2==0) & (min(values)%2==0):
         out = "even"
     elif (max(values)%2==1) & (min(values)%2==1):

@@ -1,4 +1,4 @@
-from enhance_ocod.inference_utils import parse_addresses_batch, convert_to_entity_dataframe
+from enhance_ocod.inference_utils import parse_addresses_pipeline, convert_to_entity_dataframe
 from enhance_ocod.address_parsing_helper_functions import (
     load_and_prep_OCOD_data, parsing_and_expansion_process, post_process_expanded_data
 )
@@ -94,7 +94,7 @@ def timed_load_and_prep_OCOD_data(*args, **kwargs):
 
 @time_function("parse_addresses_batch")
 def timed_parse_addresses_batch(*args, **kwargs):
-    return parse_addresses_batch(*args, **kwargs)
+    return parse_addresses_pipeline(*args, **kwargs)
 
 @time_function("convert_to_entity_dataframe")
 def timed_convert_to_entity_dataframe(*args, **kwargs):
@@ -181,9 +181,9 @@ else:
         df=ocod_data,
         model_path=str(model_path),
         target_column="property_address",
-        batch_size=2048,
-        use_fp16=True,
-        max_length = 1024
+        batch_size=1024,
+        #use_fp16=True,
+        #max_length = 512
     )
     
     test = timed_convert_to_entity_dataframe(results)
