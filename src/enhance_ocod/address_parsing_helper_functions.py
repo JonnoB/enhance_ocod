@@ -665,8 +665,9 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
     # Convert to lowercase first, then apply the tokenization preprocessing
     address_series = ocod_data['property_address'].str.lower()
     
+    #This did not help
     # Use the same preprocessing function as training
-    ocod_data['property_address'] = preprocess_text_for_tokenization(address_series)
+    #ocod_data['property_address'] = preprocess_text_for_tokenization(address_series)
     
     return ocod_data
 

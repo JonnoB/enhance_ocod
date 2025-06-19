@@ -206,6 +206,9 @@ def evaluate_model_performance(model_path, data_path, output_dir, dataset_name="
     
     # Load model and tokenizer
     model = AutoModelForTokenClassification.from_pretrained(model_path)
+
+    if torch.cuda.is_available():
+        model = model.to('cuda')
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     id2label = model.config.id2label
     

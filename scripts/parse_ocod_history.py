@@ -52,7 +52,7 @@ This is a computationally intensive process that requires significant memory and
 time. The script includes memory management strategies and progress tracking.
 """
 
-from enhance_ocod.inference_utils import parse_addresses_batch, convert_to_entity_dataframe
+from enhance_ocod.inference_utils import parse_addresses_pipeline, convert_to_entity_dataframe
 from enhance_ocod.address_parsing_helper_functions import (
     load_and_prep_OCOD_data, parsing_and_expansion_process, post_process_expanded_data
 )
@@ -79,7 +79,7 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 # ====== CONSTANT PATHS AND SETTINGS ======
 input_dir = SCRIPT_DIR.parent / "data" / "ocod_history"
 output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
-model_path = SCRIPT_DIR.parent / "models" / "address_parser_dev" / "final_model"
+model_path = SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
 ONSPD_path = SCRIPT_DIR.parent / "data" / "ONSPD_FEB_2025.zip"
 price_paid_path = SCRIPT_DIR.parent / "data" / "price_paid_data" / "price_paid_complete_may_2025.csv"
 processed_price_paid_dir = SCRIPT_DIR.parent / "data" / "processed_price_paid"
@@ -90,7 +90,7 @@ output_dir.mkdir(parents=True, exist_ok=True)
 #
 # TESTING!!! only 10 files!
 #
-all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])[0:10]
+all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])
 
 print(f"Found {len(all_files)} OCOD history files.")
 
@@ -118,14 +118,10 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     print(f"Parsing addresses for {zip_file.name}...")
     start_time = time.time()
 
-    results = parse_addresses_batch(
+    results = parse_addresses_pipeline(
         df=ocod_data,
         model_path=str(model_path),
         target_column="property_address",
-        batch_size=64,  # Increased batch size since we're using FP16
-        use_fp16=True,
-        max_length=1024,  # Explicit control
-        stride=50
     )
 
     end_time = time.time()

@@ -10,7 +10,8 @@ PROJECT_ROOT = SCRIPT_DIR.parent  # This gets you to the enhance_ocod directory
 # Define the files to process
 files_to_process = [
     "ground_truth_test_set_labels.csv",
-    "ground_truth_dev_set_labels.csv"  # assuming this is the second file
+    "ground_truth_dev_set_labels.csv",
+    "full_dataset_no_overlaps.csv"
 ]
 
 for filename in files_to_process:

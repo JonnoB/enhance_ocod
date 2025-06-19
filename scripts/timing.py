@@ -181,7 +181,7 @@ else:
         df=ocod_data,
         model_path=str(model_path),
         target_column="property_address",
-        batch_size=1024,
+        #batch_size=1024,
         #use_fp16=True,
         #max_length = 512
     )

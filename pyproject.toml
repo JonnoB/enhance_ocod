@@ -18,6 +18,8 @@ dependencies = [
     "pandas",
     "numpy", 
     "transformers",
+    "accelerate",
+    "seqeval",
     "datasets",
     "scikit-learn",  # for sklearn.metrics
     "torch",
