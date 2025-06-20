@@ -5,7 +5,6 @@ import numpy as np
 import time
 import zipfile
 from typing import Optional, List, Callable
-from enhance_ocod.preprocess import preprocess_text_for_tokenization
 #This  module is supposed to contain all the relevant functions for parsing the LabeledS json file 
 
 ##
@@ -348,8 +347,8 @@ def identify_multi_addresses(all_entities):
     #separate the classes using logical rules
     multi_check_df['class'] = np.select(
         [
-            multi_check_df['land']== True,
-            multi_check_df['business']== True,
+            multi_check_df['land'],
+            multi_check_df['business'],
             (multi_check_df['building_name']==1) & (multi_check_df['unit_id'] == 0), #this has to go infront of 'multi_check_df['xx_to_yy_unit_counts']>0'
             multi_check_df['xx_to_yy_unit_counts']>0,
             multi_check_df['street_number']>1,
@@ -457,15 +456,15 @@ def final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_m
     #Generally expansion is required as it changes the format to 1 address per row
     #N.B. not all expanded addresses are valid. Office blocks are 1 property but can cover multiple street addresses
     #A matching and cleaning process is required to identify what should be expanded and what not
-    if expand_addresses==True:
+    if expand_addresses:
         expanded_street = expand_dataframe_numbers(expanded_street, column_name = "street_number" )
         expanded_unit_id = expand_dataframe_numbers(expanded_unit_id, column_name = "unit_id" )
         
     #unit id and street number that does does not have the xx to yy format and so has already been expanded by spreading and backfilling
     expanded_street_simple = df[df.datapoint_id.isin(multi_property) & 
-                            (df.street_number.str.contains(xx_to_yy_regex)==False) & (df.street_number!='block')].reset_index()
+                            (not df.street_number.str.contains(xx_to_yy_regex)) & (df.street_number!='block')].reset_index()
     expanded_unit_id_simple = df[df.datapoint_id.isin(multi_unit_id) & 
-                             (df.unit_id.str.contains(xx_to_yy_regex)==False) & (df.unit_id!='block')].reset_index()
+                             (not df.unit_id.str.contains(xx_to_yy_regex)) & (df.unit_id!='block')].reset_index()
 
     #remove the multi-addresses
     single_address_only =all_entities[~all_entities['datapoint_id'].isin(all_multi_ids)]
@@ -663,7 +662,7 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
     
     # Apply consistent preprocessing using the harmonized function
     # Convert to lowercase first, then apply the tokenization preprocessing
-    address_series = ocod_data['property_address'].str.lower()
+    ocod_data['property_address'].str.lower()
     
     #This did not help
     # Use the same preprocessing function as training

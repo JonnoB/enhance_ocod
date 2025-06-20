@@ -20,11 +20,11 @@ Usage:
 The CSV file path is hardcoded in the CSV_FILE_PATH variable below.
 """
 
-from enhance_ocod.inference_utils import parse_addresses_batch, convert_to_entity_dataframe
-from enhance_ocod.address_parsing_helper_functions import (
+from enhance_ocod.inference import parse_addresses_batch, convert_to_entity_dataframe
+from enhance_ocod.address_parsing import (
     parsing_and_expansion_process, post_process_expanded_data
 )
-from enhance_ocod.locate_and_classify_helper_functions import (
+from enhance_ocod.locate_and_classify import (
     load_postcode_district_lookup, preprocess_expandaded_ocod_data, 
     add_missing_lads_ocod, load_voa_ratinglist, street_and_building_matching, substreet_matching,
     counts_of_businesses_per_oa_lsoa, voa_address_match_all_data, classification_type1, classification_type2,

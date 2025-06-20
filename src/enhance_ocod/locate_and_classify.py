@@ -1,7 +1,6 @@
 
 #the functions used by the empty homes project python notebooks
 import io
-import os
 import re
 import time
 import zipfile
@@ -294,7 +293,7 @@ def massaged_address_match(ocod_data, voa_data, target_lad):
     
     ocod_data_road = ocod_data_road.merge(all_street_addresses, how = "left", on = ['street_name2', 'street_number2'])
     
-    ocod_data_road['address_match'] = ocod_data_road['business_address'].notna()==True
+    ocod_data_road['address_match'] = ocod_data_road['business_address'].notna()
     
     ocod_data_road.loc[ocod_data_road['street_name2']== "xxxstreet name missingxxx",'street_name2'] = np.nan
     
@@ -532,7 +531,7 @@ def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
     # Optimize nested properties processing - combine LSOA and OA processing
     def process_nested_properties(ocod_data, code_col, new_col_name):
         temp = (ocod_data.loc[(ocod_data[code_col].notnull()) & 
-                             (ocod_data['within_larger_title'] == True), 
+                             (ocod_data['within_larger_title']), 
                              [code_col, 'title_number']]
                .drop_duplicates()
                .groupby('title_number')[code_col]
@@ -640,8 +639,6 @@ def substreet_matching(ocod_data, price_paid_df, voa_businesses, print_lads=Fals
     return ocod_data
 
 
-import numpy as np
-import pandas as pd
 
 def extract_numeric_fast(series):
     """Fast numeric extraction using vectorized operations"""
@@ -714,7 +711,7 @@ def fill_nested_lsoa_vectorized(ocod_data):
     # Find titles with known LSOA
     known_lsoa = ocod_data[
         (ocod_data['lsoa11cd'].notna()) & 
-        (ocod_data['within_larger_title'] == True)
+        (ocod_data['within_larger_title'])
     ][['lsoa11cd', 'title_number']].drop_duplicates()
     
     # Take first LSOA per title (handles multiple LSOA per title)
@@ -888,10 +885,10 @@ def classification_type1(ocod_data):
             ocod_data['property_address'].str.contains(r"^(?:[a-z\s]*)(?:garage|parking(?:\s)?space|parking space|car park(?:ing)?)", case = False),
             ocod_data['property_address'].str.contains(r"^(?:the airspace|airspace)", case = False),
             ocod_data['property_address'].str.contains(r"penthouse|flat|apartment", case = False),
-            ocod_data['address_match']==True,
+            ocod_data['address_match'],
             ocod_data['property_address'].str.contains(r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|^store(?:s)?\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)", case = False), 
-            ocod_data['property_address'].str.contains(r"^[a-z\s']+\b(?:land(?:s)?|plot(?:s)?)\b", case = False)==True, #land with words before it
-            ocod_data['building_name'].str.contains(r'\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)')==True, #pubs in various guises
+            ocod_data['property_address'].str.contains(r"^[a-z\s']+\b(?:land(?:s)?|plot(?:s)?)\b", case = False), #land with words before it
+            ocod_data['building_name'].str.contains(r'\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)'), #pubs in various guises
             ocod_data['oa_busi_building'].notnull(),#a business building was matched
             ocod_data['business_address'].notnull()
 
@@ -913,10 +910,10 @@ def classification_type1(ocod_data):
     
     #Fills out unknown class values using the known class values from the same title number
 
-    temp_fill = ocod_data[~ocod_data['class'].isin(['unknown', 'airspace', 'carpark']) & (ocod_data['within_larger_title']==True)].groupby(['title_number', 'class']).\
+    temp_fill = ocod_data[~ocod_data['class'].isin(['unknown', 'airspace', 'carpark']) & (ocod_data['within_larger_title'])].groupby(['title_number', 'class']).\
     size().reset_index()[['title_number', 'class']].drop_duplicates()
 
-    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class']=='unknown') & (ocod_data['within_larger_title']==True)].copy()
+    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class']=='unknown') & (ocod_data['within_larger_title'])].copy()
 
     temp.drop('class', axis = 1, inplace = True)
 
@@ -930,12 +927,12 @@ def classification_type1(ocod_data):
 def classification_type2(ocod_data):
     
     ocod_data['class2'] = np.select(
-        [   (ocod_data['class']=='unknown') & ((ocod_data.property_address.str.contains('^(?:the )?unit') & ocod_data.property_address.str.contains('park', regex = True))==True), #contains the word unit and park
+        [   (ocod_data['class']=='unknown') & ((ocod_data.property_address.str.contains('^(?:the )?unit') & ocod_data.property_address.str.contains('park', regex = True))), #contains the word unit and park
             (ocod_data['class']=='unknown') & (ocod_data['business_counts']==0), #if there are no businesses in the oa then it is a residential
             (ocod_data['class']=='unknown') & (ocod_data['lsoa_business_counts']==0), #if there are no businesses in the lsoa then it is a residential
-            (ocod_data['class']=='unknown') & (ocod_data['street_match']==True) & (ocod_data['street_name'].notnull()==True) & (ocod_data['street_number'].notnull()==True),
-            (ocod_data['class']=='unknown') & (ocod_data['street_match']==False) & (ocod_data['street_name'].notnull()==True),
-            (ocod_data['class']=='unknown') & (ocod_data['building_name'].notnull()==True)
+            (ocod_data['class']=='unknown') & (ocod_data['street_match']) & (ocod_data['street_name'].notnull()) & (ocod_data['street_number'].notnull()),
+            (ocod_data['class']=='unknown') & (not ocod_data['street_match']) & (ocod_data['street_name'].notnull()),
+            (ocod_data['class']=='unknown') & (ocod_data['building_name'].notnull())
 
         ], 
         [
@@ -952,10 +949,10 @@ def classification_type2(ocod_data):
 
     #fillout larger titles that are now partially tagged
 
-    temp_fill = ocod_data[~ocod_data['class2'].isin(['unknown', 'airspace', 'carpark']) & (ocod_data['within_larger_title']==True)].groupby(['title_number', 'class2']).\
+    temp_fill = ocod_data[~ocod_data['class2'].isin(['unknown', 'airspace', 'carpark']) & (ocod_data['within_larger_title'])].groupby(['title_number', 'class2']).\
     size().reset_index()[['title_number', 'class2']].drop_duplicates()
 
-    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class2']=='unknown') & (ocod_data['within_larger_title']==True)].copy()
+    temp = ocod_data[ocod_data['title_number'].isin(temp_fill['title_number']) & (ocod_data['class2']=='unknown') & (ocod_data['within_larger_title'])].copy()
 
     temp.drop('class2', axis = 1, inplace = True)
 

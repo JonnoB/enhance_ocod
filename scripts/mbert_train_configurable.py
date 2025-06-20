@@ -12,7 +12,7 @@ from transformers import (
     DataCollatorForTokenClassification
 )
 from pathlib import Path
-from enhance_ocod.bert_utils import NERDataProcessor, create_label_list, evaluate_model_performance
+from enhance_ocod.training import NERDataProcessor, create_label_list, evaluate_model_performance
 import torch
 import argparse
 import pandas as pd

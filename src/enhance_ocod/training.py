@@ -39,7 +39,6 @@ class NERDataProcessor:
                 char_to_span[char_idx] = span
         
         # Map tokens to labels
-        previous_word_idx = None
         current_entity_span = None  # Track the actual entity span, not just any span
         
         for token_idx, word_idx in enumerate(word_ids):
@@ -56,7 +55,7 @@ class NERDataProcessor:
                     
                 token_start = char_span.start
                 token_end = char_span.end
-            except:
+            except Exception:
                 labels[token_idx] = self.label2id['O']
                 continue
             
@@ -86,8 +85,6 @@ class NERDataProcessor:
                 else:
                     # This is a continuation of the current entity
                     labels[token_idx] = self.label2id.get(f'I-{entity_label}', self.label2id['O'])
-            
-            previous_word_idx = word_idx
         
         return labels
     
@@ -263,7 +260,7 @@ def evaluate_model_performance(model_path, data_path, output_dir, dataset_name="
     print(f"Overall F1: {overall_f1:.4f}")
     print(f"Overall Precision: {overall_precision:.4f}")  
     print(f"Overall Recall: {overall_recall:.4f}")
-    print(f"\nPer-class results:")
+    print("\nPer-class results:")
     print(classification_report(y_true, y_pred))
     
     # Save results
@@ -303,7 +300,7 @@ def evaluate_model_performance(model_path, data_path, output_dir, dataset_name="
     class_file = output_path / f"{dataset_name}_class_performance.csv"
     class_df.to_csv(class_file, index=False)
     
-    print(f"\nResults saved:")
+    print("\nResults saved:")
     print(f"  Overall: {overall_file}")
     print(f"  Per-class: {class_file}")
     

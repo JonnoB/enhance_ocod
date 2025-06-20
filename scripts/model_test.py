@@ -10,7 +10,7 @@ import json
 import torch
 from pathlib import Path
 from transformers import AutoModelForTokenClassification, AutoTokenizer
-from enhance_ocod.bert_utils import NERDataProcessor
+from enhance_ocod.training import NERDataProcessor
 
 from seqeval.metrics import f1_score, precision_score, recall_score, classification_report
 from seqeval.metrics.sequence_labeling import get_entities
