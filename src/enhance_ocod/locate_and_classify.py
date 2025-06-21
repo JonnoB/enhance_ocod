@@ -931,7 +931,7 @@ def classification_type2(ocod_data):
             (ocod_data['class']=='unknown') & (ocod_data['business_counts']==0), #if there are no businesses in the oa then it is a residential
             (ocod_data['class']=='unknown') & (ocod_data['lsoa_business_counts']==0), #if there are no businesses in the lsoa then it is a residential
             (ocod_data['class']=='unknown') & (ocod_data['street_match']) & (ocod_data['street_name'].notnull()) & (ocod_data['street_number'].notnull()),
-            (ocod_data['class']=='unknown') & (not ocod_data['street_match']) & (ocod_data['street_name'].notnull()),
+            (ocod_data['class']=='unknown') & (~ocod_data['street_match']).fillna(False) & (ocod_data['street_name'].notnull()),
             (ocod_data['class']=='unknown') & (ocod_data['building_name'].notnull())
 
         ], 

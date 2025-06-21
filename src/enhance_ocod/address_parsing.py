@@ -347,25 +347,24 @@ def identify_multi_addresses(all_entities):
     #separate the classes using logical rules
     multi_check_df['class'] = np.select(
         [
-            multi_check_df['land'],
-            multi_check_df['business'],
-            (multi_check_df['building_name']==1) & (multi_check_df['unit_id'] == 0), #this has to go infront of 'multi_check_df['xx_to_yy_unit_counts']>0'
-            multi_check_df['xx_to_yy_unit_counts']>0,
-            multi_check_df['street_number']>1,
-            multi_check_df['unit_id']>1,
-            (multi_check_df['street_number']<=1) & (multi_check_df['xx_to_yy_street_counts']<=1) & (multi_check_df['unit_id']<=1) ##This does most of the heavy lifting
+            multi_check_df['land'],  # Land/plot addresses are single properties
+            multi_check_df['business'],  # Business addresses are typically single properties
+            (multi_check_df['building_name']==1) & (multi_check_df['unit_id'] == 0),  # Single building name without units = single property
+            (multi_check_df['xx_to_yy_unit_counts']>0) | (multi_check_df['xx_to_yy_street_counts']>0),  # Range patterns in unit IDs = multiple units
+            multi_check_df['street_number']>1,  # Multiple street numbers = multiple properties
+            multi_check_df['unit_id']>1,  # Multiple unit IDs = multiple units
+            (multi_check_df['street_number']<=1) & (multi_check_df['xx_to_yy_street_counts']==0) & (multi_check_df['unit_id']<=1)  # Single street number, no ranges, single/no unit = single property
         ], 
         [
-        'single',
-        'single',
-        'single',
-        'multi',
-        'multi',
-        'multi',
-        'single',
-        
+            'single',
+            'single', 
+            'single',
+            'multi',
+            'multi',
+            'multi',
+            'single',
         ], 
-        default='unknown'
+        default='unknown'  # Fallback for edge cases
     )
    #With the multiaddress dataframe created the required vectors can now be produced
 
@@ -463,9 +462,9 @@ def final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_m
         
     #unit id and street number that does does not have the xx to yy format and so has already been expanded by spreading and backfilling
     expanded_street_simple = df[df.datapoint_id.isin(multi_property) & 
-                            (not df.street_number.str.contains(xx_to_yy_regex)) & (df.street_number!='block')].reset_index()
+                            (~df.street_number.str.contains(xx_to_yy_regex).fillna(False)) & (df.street_number!='block')].reset_index()
     expanded_unit_id_simple = df[df.datapoint_id.isin(multi_unit_id) & 
-                             (not df.unit_id.str.contains(xx_to_yy_regex)) & (df.unit_id!='block')].reset_index()
+                             (~df.unit_id.str.contains(xx_to_yy_regex).fillna(False)) & (df.unit_id!='block')].reset_index()
 
     #remove the multi-addresses
     single_address_only =all_entities[~all_entities['datapoint_id'].isin(all_multi_ids)]

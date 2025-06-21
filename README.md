@@ -110,9 +110,11 @@ What's in the laundromat? Mapping and characterising offshore owned residential 
 The next thing I need to do is either download the spacy model or retrain it on the data in the repo. Then test the entire pipeline
 
 
+- re-implement the span functions to work with snorkel.
+- Re-check the performance of the labelling functions, would a hybrid approach work well
+- compare weak-lablled, weak-lablled bert-trained, dev trained, hybrid, which is best?
 - The original version had some manual data quality checks, I need to see if these are still issues, certain things like kkey errors saying 10-1124 not 100-112 will still be there and having a method to identify these error would be helpful.
-- set up lightning evironment and test current method works
+- Implement API module
 - perform memory and speed profiling on the process, or different sections of it, what optimisations would speed things up?
-- add docstrings and type hints
 - tests!
 - make pypi installable
