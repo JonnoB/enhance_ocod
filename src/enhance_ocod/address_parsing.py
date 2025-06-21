@@ -415,6 +415,7 @@ def add_backfill_blockers(df):
     
     return df
 
+# This function has been significantly modified from the original
 def backfill_address_labels(df):
     
     """
@@ -486,6 +487,8 @@ def final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_m
    
     return full_expanded_data
 
+# There is a significant change here which is that the column filter_type is renamed number_filter...
+# but this would only effect expansions which had that no?
 def parsing_and_expansion_process(
     all_entities: pd.DataFrame, 
     expand_addresses: bool = False, 
@@ -592,6 +595,7 @@ def load_csv_from_zip(zip_path: str,
     
     return df
 
+# This function is significantly changed but I don't think it will impact anything
 def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
     """
     Load and preprocess OCOD dataset for address parsing.
@@ -613,7 +617,7 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
         return x.lower().replace(" ", "_") in keep_columns
     
     try:
-        # [Your existing file loading logic - unchanged]
+        
         if file_path.lower().endswith('.zip'):
             try:
                 ocod_data = load_csv_from_zip(

@@ -152,9 +152,23 @@ def timed_counts_of_businesses_per_oa_lsoa(*args, **kwargs):
 def timed_voa_address_match_all_data(*args, **kwargs):
     return voa_address_match_all_data(*args, **kwargs)
 
+@time_function("classification_type1")
+def timed_classification_type1(*args, **kwargs):
+    return classification_type1(*args, **kwargs)
+
+@time_function("classification_type2")
+def timed_classification_type2(*args, **kwargs):
+    return classification_type2(*args, **kwargs)
+
+@time_function("contract_ocod_after_classification")
+def timed_contract_ocod_after_classification(*args, **kwargs):
+    return contract_ocod_after_classification(*args, **kwargs)
+
 @time_function("save_to_parquet")
 def timed_save_to_parquet(df, path):
     return df.to_parquet(path)
+
+
 
 ###############
 # Parse addresses (with caching)
@@ -229,6 +243,23 @@ print(f"Classifying {zip_file.name}...")
 ocod_data = timed_counts_of_businesses_per_oa_lsoa(ocod_data, voa_businesses)
 ocod_data = timed_voa_address_match_all_data(ocod_data, voa_businesses)
 del voa_businesses  # memory management
+
+# Classification steps
+ocod_data = timed_classification_type1(ocod_data)
+ocod_data = timed_classification_type2(ocod_data)
+
+ocod_data = timed_contract_ocod_after_classification(ocod_data, class_type='class2', classes=['residential'])
+
+# Column selection and renaming
+columns = ['title_number', 'within_title_id', 'within_larger_title', 'unique_id', 
+          'unit_id', 'unit_type', 'building_name', 'street_number', 'street_name', 
+          'postcode', 'city', 'district', 'region', 'property_address', 'oa11cd', 
+          'lsoa11cd', 'msoa11cd', 'lad11cd', 'class', 'class2']
+
+ocod_data = ocod_data.loc[:, columns].rename(columns={
+    'within_title_id': 'nested_id',
+    'within_larger_title': 'nested_title'
+})
 
 timed_save_to_parquet(ocod_data, out_path)
 print(f"Saved processed data to {out_path}")

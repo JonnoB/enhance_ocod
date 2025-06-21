@@ -165,6 +165,20 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     ocod_data = counts_of_businesses_per_oa_lsoa(ocod_data, voa_businesses)
     ocod_data = voa_address_match_all_data(ocod_data, voa_businesses)
 
+    ocod_data = classification_type1(ocod_data)
+    ocod_data = classification_type2(ocod_data)
+    
+    ocod_data = contract_ocod_after_classification(ocod_data, class_type='class2', classes=['residential'])
+
+    columns = ['title_number', 'within_title_id', 'within_larger_title', 'unique_id', 
+              'unit_id', 'unit_type', 'building_name', 'street_number', 'street_name', 
+              'postcode', 'city', 'district', 'region', 'property_address', 'oa11cd', 
+              'lsoa11cd', 'msoa11cd', 'lad11cd', 'class', 'class2']
+
+    ocod_data = ocod_data.loc[:, columns].rename(columns={
+        'within_title_id': 'nested_id',
+        'within_larger_title': 'nested_title'
+    })
     # Save results
     ocod_data.to_parquet(out_path)
     print(f"Saved processed data to {out_path}")
