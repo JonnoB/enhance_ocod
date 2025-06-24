@@ -1,7 +1,8 @@
-###
-### These are useful regex's to be used in the humanloop programatic part of the work
-### By adding them here I can reuse them easily and keep them updated in a much more straight forword way
-###
+"""
+Regular expressions for Named Entity Recognition (NER) labelling in property address data.
+
+This module contains a curated set of regex patterns for identifying address components such as roads, buildings, postcodes, cities, business types, and special cases. These patterns are designed for reuse across labelling functions and are intended to be updated and maintained centrally for consistency and ease of extension.
+"""
 
 #this is a key regex that allows me to identify roads
 road_regex  = r"((road|street|lane|way|gate|avenue|close|drive|hill|place|terrace|crescent|square|walk|grove|mews|row|view|boulevard|pleasant|vale|yard|chase|rise|green|passage|friars|viaduct|promenade|\bend|\bridge|embankment|villas|circus|\bpath|pavement))\b( east| west| north| south)?"

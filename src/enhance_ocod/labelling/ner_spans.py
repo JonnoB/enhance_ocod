@@ -1,19 +1,21 @@
 """
-Snorkel-compatible NER labelling functions (library-agnostic)
+Library-agnostic NER labelling functions for property address entity extraction.
 
-Each function returns a list of (start, end, label) tuples for each entity found.
-Functions are grouped by their original subfolder for traceability.
+This module provides a suite of functions that extract entity spans (start, end, label) from text, covering buildings, cities, postcodes, streets, units, and more. Each function is designed to be independent of specific frameworks and can be used in any weak supervision pipeline.
 
-Expected input: an object (row) with a `.text` attribute (str), plus any 
-subfolder-specific attributes (e.g. flat_tag).
+Expected input: an object (row) with a `.text` attribute (str), plus any subfolder-specific attributes (e.g. flat_tag).
 
-To use: import and call any function with your row object. Or iterate all in `lfs`.
+Typical usage:
+    - Import and call any function with your row object.
+    - Or iterate all functions in the `lfs` list for batch labelling.
+
+Returns: List of (start, end, label) tuples for each entity found.
 """
 
 import re
 from typing import List, Tuple, Any
 
-from ner_regex import (
+from .ner_regex import (
     building_regex,
     multi_word_no_land,
     building_special,
@@ -141,7 +143,7 @@ def city_match2(row: Any) -> EntityList:
 
 def number_filter(row: Any) -> EntityList:
     """Extract number filter terms like 'odd' or 'even'."""
-    pattern = re.compile(r"(?<=\()(odd|even)s?", flags=re.IGNORECASE)
+    pattern = re.compile(r"(?<=\()\s?(odd|even)(?=s?\b)", flags=re.IGNORECASE)
     return [(m.start(), m.end(), "NUMBER_FILTER") for m in pattern.finditer(row.text)]
 
 
