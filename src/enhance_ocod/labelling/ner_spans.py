@@ -54,6 +54,16 @@ FLAT_UNIT_PATTERN = r"apartment|flat|penthouse"
 UNIT_PATTERN = r"(?:flat|apartment|unit)s?"
 
 
+BUILDING = "building_name"
+STREET = "street_name"
+STREET_NUMBER = "street_number"
+NUMBER_FILTER ="number_filter"
+UNIT_ID = "unit_id"
+UNIT_TYPE = "unit_type"
+CITY = "city"
+POSTCODE = "postcode"
+COMPANY = "company"
+
 # ============================================================================
 # BUILDING LABELLING FUNCTIONS
 # ============================================================================
@@ -64,7 +74,7 @@ def building_regex_fn(row: Any) -> EntityList:
         multi_word_no_land + building_regex + r"\b(?=,| and|$|;|:|\(|\s\d+,)",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "BUILDING") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), BUILDING) for m in pattern.finditer(row.text)]
 
 
 def building_special_fn(row: Any) -> EntityList:
@@ -73,7 +83,7 @@ def building_special_fn(row: Any) -> EntityList:
         multi_word_no_land + building_special + COMMON_ENDINGS,
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "BUILDING") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), BUILDING) for m in pattern.finditer(row.text)]
 
 
 def company_name(row: Any) -> EntityList:
@@ -82,7 +92,7 @@ def company_name(row: Any) -> EntityList:
         r"[a-z\(\)'\s&]+" + company_type_regex,
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "COMPANY") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), COMPANY) for m in pattern.finditer(row.text)]
 
 
 def mill(row: Any) -> EntityList:
@@ -91,7 +101,7 @@ def mill(row: Any) -> EntityList:
         r"(?<=[0-9]|,|\))\s([a-z][a-z'\s]+mill)(?=,| and|$|;|:)",
         flags=re.IGNORECASE
     )
-    return [(m.span(1)[0], m.span(1)[1], "BUILDING") for m in pattern.finditer(row.text)]
+    return [(m.span(1)[0], m.span(1)[1], BUILDING) for m in pattern.finditer(row.text)]
 
 
 def number_comma_building_fn(row: Any) -> EntityList:
@@ -100,13 +110,13 @@ def number_comma_building_fn(row: Any) -> EntityList:
         rf"{UNIT_PATTERN} (?:[a-z]|\d+[a-z0-9\-\.]*|{xx_to_yy_regex}),\s([a-z\s.']+)(?=,)",
         flags=re.IGNORECASE
     )
-    return [(m.span(1)[0], m.span(1)[1], "BUILDING") for m in pattern.finditer(row.text)]
+    return [(m.span(1)[0], m.span(1)[1], BUILDING) for m in pattern.finditer(row.text)]
 
 
 def start_only_letters_fn(row: Any) -> EntityList:
     """Extract building names that start with letters only."""
     pattern = re.compile(starting_building + COMMON_ENDINGS, flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "BUILDING") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), BUILDING) for m in pattern.finditer(row.text)]
 
 
 def wharf_building(row: Any) -> EntityList:
@@ -115,13 +125,13 @@ def wharf_building(row: Any) -> EntityList:
         rf"(([a-z']+\s)+(wharf|quay|croft|priory|maltings|locks|gardens))(?:,)(?=[0-9a-z'\s]+{road_regex})",
         flags=re.IGNORECASE
     )
-    return [(m.span(1)[0], m.span(1)[1], "BUILDING") for m in pattern.finditer(row.text)]
+    return [(m.span(1)[0], m.span(1)[1], BUILDING) for m in pattern.finditer(row.text)]
 
 
 def word_building_number(row: Any) -> EntityList:
     """Extract block/building identifiers with numbers."""
     pattern = re.compile(r"(block|building) ([a-z]([0-9]?)|\d+|)(?=,)", flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "BUILDING") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), BUILDING) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -134,7 +144,7 @@ def city_match2(row: Any) -> EntityList:
         rf".*,\s*([^,]*?)(?=(?:(\sand\s|\s?\(?{postcode_regex})[^,]*)?$)",
         flags=re.IGNORECASE
     )
-    return [(m.span(1)[0], m.span(1)[1], "CITY") for m in pattern.finditer(row.text)]
+    return [(m.span(1)[0], m.span(1)[1], CITY) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -144,7 +154,7 @@ def city_match2(row: Any) -> EntityList:
 def number_filter(row: Any) -> EntityList:
     """Extract number filter terms like 'odd' or 'even'."""
     pattern = re.compile(r"(?<=\()\s?(odd|even)(?=s?\b)", flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "NUMBER_FILTER") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), NUMBER_FILTER) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -154,7 +164,7 @@ def number_filter(row: Any) -> EntityList:
 def postcodes(row: Any) -> EntityList:
     """Extract postcodes from text."""
     pattern = re.compile(postcode_regex, flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "POSTCODE") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), POSTCODE) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -164,7 +174,7 @@ def postcodes(row: Any) -> EntityList:
 def knightsbridge_road(row: Any) -> EntityList:
     """Extract Knightsbridge road references."""
     pattern = re.compile(r"(?<=\d\s)knightsbridge(?=,)")
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def meadows_regex(row: Any) -> EntityList:
@@ -173,13 +183,13 @@ def meadows_regex(row: Any) -> EntityList:
         r"(?<=[0-9]\s)[a-z][a-z'\s]*meadow(s)?(?=,| and|$|;|:)",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def number_space_multi_words_roadtitle_fn(row: Any) -> EntityList:
     """Extract multi-word street names following numbers."""
     pattern = re.compile(rf"(?<=\d\s)(\b[a-z]+\s){{2,5}}({road_regex})")
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def park_roads(row: Any) -> EntityList:
@@ -189,7 +199,7 @@ def park_roads(row: Any) -> EntityList:
     if getattr(row, 'commercial_park_tag', False):
         return []
     
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def road_followed_city(row: Any) -> EntityList:
@@ -198,7 +208,7 @@ def road_followed_city(row: Any) -> EntityList:
         multi_word_no_land + road_regex + rf"(?=\s{city_regex})",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def road_names_basic(row: Any) -> EntityList:
@@ -207,7 +217,7 @@ def road_names_basic(row: Any) -> EntityList:
         multi_word_no_land + road_regex + rf"(?=,| and| \(|$|;|:|\s{city_regex})",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def side(row: Any) -> EntityList:
@@ -216,19 +226,19 @@ def side(row: Any) -> EntityList:
         r"(new road|lodge|carr moor|lake|chase|thames|kennet|coppice|church|pool) side",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def special_street_names(row: Any) -> EntityList:
     """Extract special street names from predefined list."""
     pattern = re.compile(special_streets + r"(?=,| and| \(|$)", flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def special_welsh(row: Any) -> EntityList:
     """Extract Welsh street names."""
     pattern = re.compile(welsh_streets, flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def the_dales(row: Any) -> EntityList:
@@ -238,7 +248,7 @@ def the_dales(row: Any) -> EntityList:
         r"wester|deep|fern|grise|common|moss)dale(?=,| and|$)",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def welsh_pattern(row: Any) -> EntityList:
@@ -247,7 +257,7 @@ def welsh_pattern(row: Any) -> EntityList:
         r"\b(lon|llys|fford|clos)\s[a-z\-\s']+(?=,| and|$)",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 def wharf_road(row: Any) -> EntityList:
@@ -257,13 +267,13 @@ def wharf_road(row: Any) -> EntityList:
         rf"priory|maltings|locks|gardens))(?:,)(?![0-9a-z'\s]+{road_regex})",
         flags=re.IGNORECASE
     )
-    return [(m.span(1)[0], m.span(1)[1], "STREET") for m in pattern.finditer(row.text)]
+    return [(m.span(1)[0], m.span(1)[1], STREET) for m in pattern.finditer(row.text)]
 
 
 def words_waygate_fn(row: Any) -> EntityList:
     """Extract waygate street names."""
     pattern = re.compile(multi_word_no_land + waygate_regex + r"(?=,| and| \()")
-    return [(m.start(), m.end(), "STREET") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -276,19 +286,19 @@ def adjective_space_number_words_roadtitle_fn(row: Any) -> EntityList:
         rf"(?<=\b)([a-z]+\s){{1,3}}(\d+)(\s[a-z]+)?(\s{ROAD_TYPES})",
         flags=re.IGNORECASE
     )
-    return [(m.start(), m.end(), "STREET_NUMBER") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET_NUMBER) for m in pattern.finditer(row.text)]
 
 
 def and_space_n(row: Any) -> EntityList:
     """Extract numbers following 'and '."""
     pattern = re.compile(r"and\s(\d+)")
-    return [(m.start(1), m.end(1), "STREET_NUMBER") for m in pattern.finditer(row.text)]
+    return [(m.start(1), m.end(1), STREET_NUMBER) for m in pattern.finditer(row.text)]
 
 
 def begins_with_number(row: Any) -> EntityList:
     """Extract numbers at the beginning of text."""
     pattern = re.compile(r"^(\d+)")
-    return [(m.start(1), m.end(1), "STREET_NUMBER") for m in pattern.finditer(row.text)]
+    return [(m.start(1), m.end(1), STREET_NUMBER) for m in pattern.finditer(row.text)]
 
 
 def comma_space_number_words_roadtitle_fn(row: Any) -> EntityList:
@@ -297,19 +307,19 @@ def comma_space_number_words_roadtitle_fn(row: Any) -> EntityList:
         rf",\s(\d+)(\s[a-z]+){{1,3}}(\s{ROAD_TYPES})",
         flags=re.IGNORECASE
     )
-    return [(m.start(1), m.end(1), "STREET_NUMBER") for m in pattern.finditer(row.text)]
+    return [(m.start(1), m.end(1), STREET_NUMBER) for m in pattern.finditer(row.text)]
 
 
 def no_road_near(row: Any) -> EntityList:
     """Extract 'no road near' patterns."""
     pattern = re.compile(r"\b(no\sroad\snear)\b", flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "STREET_NUMBER") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET_NUMBER) for m in pattern.finditer(row.text)]
 
 
 def xx_to_yy(row: Any) -> EntityList:
     """Extract number ranges (xx to yy)."""
     pattern = re.compile(xx_to_yy_regex)
-    return [(m.start(), m.end(), "STREET_NUMBER") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), STREET_NUMBER) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -322,7 +332,7 @@ def and_space_n_flats(row: Any) -> EntityList:
         return []
     
     pattern = re.compile(r"(?<=and\s)(\d+(\w{1})?)")
-    return [(m.start(), m.end(), "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def begins_with_number_flat(row: Any) -> EntityList:
@@ -332,7 +342,7 @@ def begins_with_number_flat(row: Any) -> EntityList:
     
     pattern = re.compile(r"^(\d+\w?)")
     match = pattern.search(row.text)
-    return [(match.start(), match.end(), "UNIT_ID")] if match else []
+    return [(match.start(), match.end(), UNIT_ID)] if match else []
 
 
 def carpark_id_fn(row: Any) -> EntityList:
@@ -342,7 +352,7 @@ def carpark_id_fn(row: Any) -> EntityList:
         r"car park(ing)?( space))\s([a-z0-9\-\.]+\b)",
         flags=re.IGNORECASE
     )
-    return [(m.span(9)[0], m.span(9)[1], "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.span(9)[0], m.span(9)[1], UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def comma_space_number_comma_flat(row: Any) -> EntityList:
@@ -351,7 +361,7 @@ def comma_space_number_comma_flat(row: Any) -> EntityList:
         return []
     
     pattern = re.compile(r"(?<=,\s)(\d+([a-z])?)(?=,)")
-    return [(m.start(), m.end(), "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def flat_letter(row: Any) -> EntityList:
@@ -360,7 +370,7 @@ def flat_letter(row: Any) -> EntityList:
         rf"({FLAT_UNIT_PATTERN})\s([a-z][0-9\.\-]*)(?=,)",
         flags=re.IGNORECASE
     )
-    return [(m.span(2)[0], m.span(2)[1], "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.span(2)[0], m.span(2)[1], UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def flat_letter_complex(row: Any) -> EntityList:
@@ -369,7 +379,7 @@ def flat_letter_complex(row: Any) -> EntityList:
         rf"({FLAT_UNIT_PATTERN})\s([a-z](\d|\.|-)[a-z0-9\-\.]*)",
         flags=re.IGNORECASE
     )
-    return [(m.span(2)[0], m.span(2)[1], "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.span(2)[0], m.span(2)[1], UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def flat_number(row: Any) -> EntityList:
@@ -378,7 +388,7 @@ def flat_number(row: Any) -> EntityList:
         rf"({FLAT_UNIT_PATTERN})\s(\d+[a-z0-9\-\.]*)",
         flags=re.IGNORECASE
     )
-    return [(m.span(2)[0], m.span(2)[1], "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.span(2)[0], m.span(2)[1], UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def number_space_and_flat(row: Any) -> EntityList:
@@ -387,25 +397,25 @@ def number_space_and_flat(row: Any) -> EntityList:
         return []
     
     pattern = re.compile(r"(?<!(-))\s(\d+)(?=\sand)", flags=re.IGNORECASE)
-    return [(m.span(2)[0], m.span(2)[1], "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.span(2)[0], m.span(2)[1], UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def unit_id_fn(row: Any) -> EntityList:
     """Extract general unit IDs."""
     pattern = re.compile(r"unit\s([a-z0-9\-\.]+)", flags=re.IGNORECASE)
-    return [(m.span(1)[0], m.span(1)[1], "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.span(1)[0], m.span(1)[1], UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def unit_letter(row: Any) -> EntityList:
     """Extract single letter unit IDs."""
     pattern = re.compile(r"unit\s([a-z])", flags=re.IGNORECASE)
-    return [(m.span(1)[0], m.span(1)[1], "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.span(1)[0], m.span(1)[1], UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 def xx_to_yy_flat(row: Any) -> EntityList:
     """Extract unit ID ranges (xx to yy)."""
     pattern = re.compile(xx_to_yy_regex)
-    return [(m.start(), m.end(), "UNIT_ID") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), UNIT_ID) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -415,19 +425,19 @@ def xx_to_yy_flat(row: Any) -> EntityList:
 def flat_unit(row: Any) -> EntityList:
     """Extract flat/apartment/penthouse unit types."""
     pattern = re.compile(FLAT_UNIT_PATTERN, flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "UNIT_TYPE") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), UNIT_TYPE) for m in pattern.finditer(row.text)]
 
 
 def is_carpark(row: Any) -> EntityList:
     """Extract car park unit types."""
     pattern = re.compile(r"car\s?park", flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "UNIT_TYPE") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), UNIT_TYPE) for m in pattern.finditer(row.text)]
 
 
 def is_other_class(row: Any) -> EntityList:
     """Extract other unit class types."""
     pattern = re.compile(UNIT_TYPES, flags=re.IGNORECASE)
-    return [(m.start(), m.end(), "UNIT_TYPE") for m in pattern.finditer(row.text)]
+    return [(m.start(), m.end(), UNIT_TYPE) for m in pattern.finditer(row.text)]
 
 
 # ============================================================================
@@ -439,7 +449,7 @@ lfs = [
     # Building functions
     building_regex_fn,
     building_special_fn,
-    company_name,
+    #company_name,
     mill,
     number_comma_building_fn,
     start_only_letters_fn,

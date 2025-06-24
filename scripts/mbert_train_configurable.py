@@ -79,7 +79,7 @@ def main():
         "building_name",
         "street_name",
         "street_number",
-        "filter_type",
+        "number_filter",
         "unit_id",
         "unit_type",
         "city",

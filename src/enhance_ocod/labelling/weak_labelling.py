@@ -24,16 +24,16 @@ from .ner_spans import lfs
 
 
 
-def apply_labeling_functions_to_row(row: pd.Series, 
+def apply_labelling_functions_to_row(row: pd.Series, 
                                   functions: List[Callable] = lfs,
                                   text_column = 'text',
                                   include_function_name: bool = False) -> Dict[str, Any]:
     """
-    Apply all labeling functions to a single row and return in training format.
+    Apply all labelling functions to a single row and return in training format.
     
     Args:
         row: pandas Series with 'text' column and any support columns
-        functions: List of labeling functions to apply
+        functions: List of labelling functions to apply
         include_function_name: Whether to include which function generated each span (useful for debugging)
     
     Returns:
@@ -81,7 +81,7 @@ def process_dataframe_batch(df: pd.DataFrame,
                            output_dir: Optional[str] = None,
                            verbose: bool = True) -> List[Dict[str, Any]]:
     """
-    Process a dataframe in batches, applying labeling functions to each row.
+    Process a dataframe in batches, applying labelling functions to each row.
     
     Args:
         df: DataFrame with text and support columns
@@ -124,7 +124,7 @@ def process_dataframe_batch(df: pd.DataFrame,
         # Process each row in the batch
         for row_idx, (_, row) in enumerate(batch_df.iterrows()):
             try:
-                result = apply_labeling_functions_to_row(
+                result = apply_labelling_functions_to_row(
                     row, 
                     include_function_name=include_function_name
                 )
@@ -286,3 +286,202 @@ def create_commercial_park_tag(df, text_column='property_address'):
             case=False, na=False, regex=True
         )
     return df
+
+
+
+def direct_entity_evaluation(ground_truth_data, predicted_data):
+    """
+    Direct entity-level evaluation without BIO token conversion.
+    
+    Args:
+        ground_truth_data: List of dicts with 'text' and 'spans'
+        predicted_data: List of dicts with 'text' and 'spans'
+    
+    Returns:
+        Dict with overall and per-class metrics in seqeval-compatible format
+    """
+    
+    # Convert to entity sets for each text
+    def extract_entities(data):
+        entity_sets = []
+        for item in data:
+            entities = set()
+            for span in item['spans']:
+                # Create entity tuple: (start, end, label) - make sure label is string
+                entities.add((span['start'], span['end'], str(span['label'])))
+            entity_sets.append(entities)
+        return entity_sets
+    
+    true_entities = extract_entities(ground_truth_data)
+    pred_entities = extract_entities(predicted_data)
+    
+    # Calculate overall metrics
+    all_true = set()
+    all_pred = set()
+    
+    for true_set, pred_set in zip(true_entities, pred_entities):
+        all_true.update(true_set)
+        all_pred.update(pred_set)
+    
+    tp = len(all_true & all_pred)
+    fp = len(all_pred - all_true)
+    fn = len(all_true - all_pred)
+    
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    
+    # Calculate per-class metrics
+    class_metrics = {}
+    all_labels = set()
+    
+    # Collect all unique labels - be explicit about extracting strings
+    for entities in true_entities + pred_entities:
+        for start, end, label in entities:
+            all_labels.add(str(label))  # Ensure it's a string
+    
+    for label in all_labels:
+        true_label = set()
+        pred_label = set()
+        
+        for true_set, pred_set in zip(true_entities, pred_entities):
+            # Filter entities for this specific label
+            true_label.update((s, e, l) for s, e, l in true_set if str(l) == label)
+            pred_label.update((s, e, l) for s, e, l in pred_set if str(l) == label)
+        
+        tp_label = len(true_label & pred_label)
+        fp_label = len(pred_label - true_label)
+        fn_label = len(true_label - pred_label)
+        
+        prec_label = tp_label / (tp_label + fp_label) if (tp_label + fp_label) > 0 else 0
+        rec_label = tp_label / (tp_label + fn_label) if (tp_label + fn_label) > 0 else 0
+        f1_label = 2 * prec_label * rec_label / (prec_label + rec_label) if (prec_label + rec_label) > 0 else 0
+        
+        class_metrics[label] = {
+            'precision': prec_label,
+            'recall': rec_label,
+            'f1-score': f1_label,
+            'support': len(true_label)
+        }
+    
+    # Return in seqeval-compatible format
+    return {
+        'overall_precision': precision,
+        'overall_recall': recall,
+        'overall_f1': f1,
+        'per_class': class_metrics
+    }
+
+def convert_weak_labels_to_standard_format(noisy_data):
+    """
+    Convert weakly-supervised or noisy NER annotations to standardized evaluation format.
+    
+    This function cleans and standardizes NER data from noisy labelling processes by:
+    - Removing duplicate entity spans within each text
+    - Filtering out extraneous fields (e.g., row_id, confidence scores)
+    - Normalizing the data structure to match evaluation pipeline requirements
+    
+    The function is designed to handle common issues in weakly-supervised NER data:
+    - Multiple identical annotations for the same entity span
+    - Inconsistent field naming across different annotation sources
+    - Extra metadata fields that interfere with evaluation
+    """
+    standardized = []
+    
+    for item in noisy_data:
+        # Remove zero-length spans first
+        valid_spans = [span for span in item['spans'] 
+                      if span['start'] < span['end']]
+        
+        # Then remove duplicates
+        seen_spans = set()
+        unique_spans = []
+        
+        for span in valid_spans:
+            span_key = (span['start'], span['end'], span['label'])
+            if span_key not in seen_spans:
+                seen_spans.add(span_key)
+                unique_spans.append({
+                    'start': span['start'],
+                    'end': span['end'], 
+                    'label': span['label']
+                })
+        
+        standardized.append({
+            'text': item['text'],
+            'spans': unique_spans
+        })
+    
+    return standardized
+
+def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, dataset_name="noisy_system"):
+    """
+    Evaluate noisy NER predictions using direct entity-level comparison.
+    """
+    print(f"Evaluating noisy predictions on {dataset_name} set...")
+    
+    # Load ground truth
+    with open(ground_truth_path, 'r') as f:
+        ground_truth_data = json.load(f)
+    
+    # Convert both to standard format and remove duplicates
+    ground_truth_clean = convert_weak_labels_to_standard_format(ground_truth_data)
+    noisy_predictions_clean = convert_weak_labels_to_standard_format(noisy_predictions)
+    
+    print(f"Loaded {len(ground_truth_clean)} ground truth examples")
+    print(f"Loaded {len(noisy_predictions_clean)} predictions")
+    
+    # Direct entity-level evaluation
+    results = direct_entity_evaluation(ground_truth_clean, noisy_predictions_clean)
+    
+    # Print results
+    print(f"\n{dataset_name.upper()} SET RESULTS:")
+    print(f"Overall F1: {results['overall_f1']:.4f}")
+    print(f"Overall Precision: {results['overall_precision']:.4f}")  
+    print(f"Overall Recall: {results['overall_recall']:.4f}")
+    print("\nPer-class results:")
+    
+    for label, metrics in results['per_class'].items():
+        print(f"{label:15s} precision: {metrics['precision']:.4f}  recall: {metrics['recall']:.4f}  f1: {metrics['f1-score']:.4f}  support: {metrics['support']}")
+    
+    # Save results (same format as original)
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Overall performance CSV
+    overall_results = pd.DataFrame([{
+        'model_path': "noisy_ner_system",
+        'dataset': dataset_name,
+        'num_examples': len(ground_truth_clean),
+        'precision': results['overall_precision'],
+        'recall': results['overall_recall'],
+        'f1_score': results['overall_f1'],
+        'evaluation_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+    }])
+    
+    overall_file = output_path / f"{dataset_name}_overall_performance.csv"
+    overall_results.to_csv(overall_file, index=False)
+    
+    # Class-wise performance CSV
+    class_results = []
+    for class_name, metrics in results['per_class'].items():
+        class_results.append({
+            'model_path': "noisy_ner_system",
+            'dataset': dataset_name,
+            'class_name': class_name,
+            'precision': metrics['precision'],
+            'recall': metrics['recall'],
+            'f1_score': metrics['f1-score'],
+            'support': metrics['support'],
+            'evaluation_date': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+    
+    class_df = pd.DataFrame(class_results)
+    class_file = output_path / f"{dataset_name}_class_performance.csv"
+    class_df.to_csv(class_file, index=False)
+    
+    print("\nResults saved:")
+    print(f"  Overall: {overall_file}")
+    print(f"  Per-class: {class_file}")
+    
+    return overall_results, class_df
