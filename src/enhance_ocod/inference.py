@@ -4,6 +4,78 @@ from transformers import pipeline, AutoTokenizer
 from typing import Dict, List, Optional, Tuple
 from tqdm import tqdm
 
+
+"""
+Address Parsing with Named Entity Recognition (NER)
+
+This module provides optimized tools for parsing addresses using HuggingFace transformer models
+with Named Entity Recognition. It offers both simple and advanced processing approaches to handle
+datasets with varying address lengths and complexity.
+
+Key Features:
+    - Single-stage processing for uniform datasets
+    - Two-stage processing optimized for mixed-length addresses  
+    - Automatic GPU/CPU device detection and management
+    - Batch processing with configurable sizes
+    - Progress tracking and comprehensive result summaries
+    - Structured output conversion for analysis
+
+Main Functions:
+    parse_addresses_basic(): Simple single-stage processing with fixed batch size.
+        Best for small datasets, debugging, or uniform address lengths.
+    
+    parse_addresses_pipeline(): Advanced two-stage processing with dynamic batching.
+        Optimized for production use with large datasets containing mixed address lengths.
+        Automatically separates short and long addresses for optimal memory usage.
+    
+    convert_to_entity_dataframe(): Converts parsing results into structured DataFrame
+        format suitable for analysis or database storage.
+
+Processing Strategies:
+    - Short addresses (≤ token_threshold): Processed with large batch sizes for high throughput
+    - Long addresses (> token_threshold): Processed with smaller batches to avoid memory issues
+    - Automatic tokenization analysis to determine optimal processing approach
+
+Dependencies:
+    - pandas: DataFrame operations and data handling
+    - torch: PyTorch backend for model inference
+    - transformers: HuggingFace model pipeline and tokenization
+    - tqdm: Progress bar visualization
+    - typing: Type hints for better code documentation
+
+Example Usage:
+    Basic processing:
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'address': ['14 Barnsbury Road', 'Flat 14a, 14 Barnsbury Road']})
+    >>> results = parse_addresses_basic(df, 'path/to/model')
+    >>> print(f"Parsed {results['summary']['successful_parses']} addresses")
+    
+    Advanced processing for large datasets:
+    >>> results = parse_addresses_pipeline(
+    ...     df=large_address_df,
+    ...     model_path='./address-ner-model',
+    ...     short_batch_size=4096,  # High throughput for short addresses
+    ...     long_batch_size=32,     # Conservative for long addresses
+    ...     token_threshold=128
+    ... )
+    
+    Convert to structured format:
+    >>> entity_df = convert_to_entity_dataframe(results)
+    >>> print(entity_df.groupby('label').size())  # Count entities by type
+
+Performance Considerations:
+    - GPU processing significantly faster than CPU for large datasets
+    - Two-stage processing prevents out-of-memory errors with mixed-length data
+    - Batch size tuning critical for optimal throughput vs memory usage
+    - Progress tracking helps monitor processing of large datasets
+
+Output Format:
+    Results contain both summary statistics and detailed entity information:
+    - Summary: Processing metrics, success rates, batch sizes used
+    - Results: Per-address parsing with entities, confidence scores, and positions
+    - Entities: Structured format with type, text, position, and confidence data
+"""
+
 # ==================== SHARED UTILITIES ====================
 
 def format_result(row_index: int, address: str, datapoint_id, predictions: List[Dict]) -> Dict:

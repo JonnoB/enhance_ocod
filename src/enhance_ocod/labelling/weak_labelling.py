@@ -114,9 +114,9 @@ def process_dataframe_batch(df: pd.DataFrame,
     
     for batch_idx, start_idx in enumerate(batch_iterator):
         end_idx = min(start_idx + batch_size, len(df))
-        batch_df = df.iloc[start_idx:end_idx]
+        batch_df = df.iloc[start_idx:end_idx].copy()
 
-        batch_df['text'] = batch_df[text_column]
+        batch_df['text'] = batch_df[text_column].fillna('')
         
         batch_results = []
         failed_rows = []

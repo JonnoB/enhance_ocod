@@ -1,6 +1,5 @@
 line-profiler>=3.5.1
 pandas>=2.0.0
-spacy>=3.7.0
 numpy>=1.24.0
 scikit-learn>=1.0.0
 transformers>=4.21.0
