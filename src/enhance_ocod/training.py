@@ -438,11 +438,15 @@ def convert_weak_labels_to_standard_format(noisy_data):
     standardized = []
     
     for item in noisy_data:
-        # Remove duplicate spans
+        # Remove zero-length spans first
+        valid_spans = [span for span in item['spans'] 
+                      if span['start'] < span['end']]
+        
+        # Then remove duplicates
         seen_spans = set()
         unique_spans = []
         
-        for span in item['spans']:
+        for span in valid_spans:
             span_key = (span['start'], span['end'], span['label'])
             if span_key not in seen_spans:
                 seen_spans.add(span_key)
@@ -458,6 +462,7 @@ def convert_weak_labels_to_standard_format(noisy_data):
         })
     
     return standardized
+
 
 def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, dataset_name="noisy_system"):
     """
@@ -479,8 +484,8 @@ def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, datas
         ground_truth_data = json.load(f)
     
     # Convert both to standard format and remove duplicates
-    ground_truth_clean = convert_noisy_to_standard_format(ground_truth_data)
-    noisy_predictions_clean = convert_noisy_to_standard_format(noisy_predictions)
+    ground_truth_clean = convert_weak_labels_to_standard_format(ground_truth_data)
+    noisy_predictions_clean = convert_weak_labels_to_standard_format(noisy_predictions)
     
     print(f"Loaded {len(ground_truth_clean)} ground truth examples")
     print(f"Loaded {len(noisy_predictions_clean)} predictions")
@@ -492,7 +497,7 @@ def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, datas
         for item in data:
             # Convert spans to entity labels: "start-end-label"
             entities = [f"{span['start']}-{span['end']}-{span['label']}" 
-                       for span in item['spans']]
+                    for span in item['spans']]
             entity_sequences.append(entities)
         return entity_sequences
     
@@ -507,7 +512,7 @@ def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, datas
         dataset_name=dataset_name,
         num_examples=len(y_true),
         output_dir=output_dir
-    )
+)
 
 def evaluate_model_performance(model_path, data_path, output_dir, dataset_name="test", max_length=128):
     """

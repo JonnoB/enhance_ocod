@@ -184,6 +184,16 @@ def load_intermediate_results(output_dir: str) -> List[Dict[str, Any]]:
     
     return all_results
 
+def remove_zero_length_spans(results: List[Dict[str, Any]]) -> None:
+    """
+    Remove all zero-length spans (where start == end) as they are not valid entities.
+    This is much simpler than handling them in overlap detection.
+    """
+    for result in results:
+        # Filter out zero-length spans
+        result['spans'] = [span for span in result['spans'] 
+                          if span['start'] < span['end']]
+
 def remove_overlapping_spans(results: List[Dict[str, Any]]) -> None:
     """
     In-place version that modifies the input list directly.
