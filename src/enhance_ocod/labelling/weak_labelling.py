@@ -122,7 +122,7 @@ def process_dataframe_batch(df: pd.DataFrame,
         failed_rows = []
         
         # Process each row in the batch
-        for row_idx, (_, row) in enumerate(batch_df.iterrows()):
+        for datapoint_id, (_, row) in enumerate(batch_df.iterrows()):
             try:
                 result = apply_labelling_functions_to_row(
                     row, 
@@ -130,16 +130,16 @@ def process_dataframe_batch(df: pd.DataFrame,
                 )
                 
                 # Add metadata for tracking
-                result['row_id'] = start_idx + row_idx  # Global row index
+                result['datapoint_id'] = start_idx + datapoint_id  # Global row index
                 batch_results.append(result)
                 
             except Exception as e:
                 failed_rows.append({
-                    'row_id': start_idx + row_idx,
+                    'datapoint_id': start_idx + datapoint_id,
                     'error': str(e),
                     'text': row.get(text_column, '')[:100] + '...'  # First 100 chars for debugging
                 })
-                logging.error(f"Failed to process row {start_idx + row_idx}: {e}")
+                logging.error(f"Failed to process row {start_idx + datapoint_id}: {e}")
         
         # Log batch statistics
         if verbose and failed_rows:
@@ -378,7 +378,7 @@ def convert_weak_labels_to_standard_format(noisy_data):
     
     This function cleans and standardizes NER data from noisy labelling processes by:
     - Removing duplicate entity spans within each text
-    - Filtering out extraneous fields (e.g., row_id, confidence scores)
+    - Filtering out extraneous fields (e.g., datapoint_id, confidence scores)
     - Normalizing the data structure to match evaluation pipeline requirements
     
     The function is designed to handle common issues in weakly-supervised NER data:

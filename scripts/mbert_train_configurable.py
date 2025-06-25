@@ -27,11 +27,9 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Train NER model with configurable data sources')
     
     parser.add_argument('--data_folder', type=str, required=True,
-                       choices=['ner_ready', 'ner_ready_preprocessed'],
                        help='Data folder to use (ner_ready or ner_ready_preprocessed)')
     
     parser.add_argument('--train_file', type=str, required=True,
-                       choices=['ground_truth_dev_set_labels.json', 'full_dataset_no_overlaps.json'],
                        help='Training data file to use')
     
     parser.add_argument('--model_suffix', type=str, required=True,

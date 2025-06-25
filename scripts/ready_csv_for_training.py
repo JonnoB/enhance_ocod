@@ -11,7 +11,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent  # This gets you to the enhance_ocod directory
 files_to_process = [
     "ground_truth_test_set_labels.csv",
     "ground_truth_dev_set_labels.csv",
-    "full_dataset_no_overlaps.csv"
+    "weakly_labelled.csv"
 ]
 
 for filename in files_to_process:

@@ -67,7 +67,7 @@ def main():
         },
         {
             "data_folder": "ner_ready", 
-            "train_file": "full_dataset_no_overlaps.json",
+            "train_file": "weakly_labelled.json",
             "model_suffix": "original_fullset"
         },
         
@@ -79,7 +79,7 @@ def main():
         },
         {
             "data_folder": "ner_ready_preprocessed",
-            "train_file": "full_dataset_no_overlaps.json",
+            "train_file": "weakly_labelled.json",
             "model_suffix": "preprocessed_fullset"
         }
     ]
