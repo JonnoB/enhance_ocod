@@ -441,7 +441,9 @@ def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, datas
     print(f"Overall Recall: {results['overall_recall']:.4f}")
     print("\nPer-class results:")
     
-    for label, metrics in results['per_class'].items():
+    # Sort classes alphabetically
+    for label in sorted(results['per_class'].keys()):
+        metrics = results['per_class'][label]
         print(f"{label:15s} precision: {metrics['precision']:.4f}  recall: {metrics['recall']:.4f}  f1: {metrics['f1-score']:.4f}  support: {metrics['support']}")
     
     # Save results (same format as original)
@@ -462,9 +464,10 @@ def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, datas
     overall_file = output_path / f"{dataset_name}_overall_performance.csv"
     overall_results.to_csv(overall_file, index=False)
     
-    # Class-wise performance CSV
+    # Class-wise performance CSV - sorted alphabetically
     class_results = []
-    for class_name, metrics in results['per_class'].items():
+    for class_name in sorted(results['per_class'].keys()):
+        metrics = results['per_class'][class_name]
         class_results.append({
             'model_path': "noisy_ner_system",
             'dataset': dataset_name,
@@ -485,3 +488,170 @@ def evaluate_weak_labels(noisy_predictions, ground_truth_path, output_dir, datas
     print(f"  Per-class: {class_file}")
     
     return overall_results, class_df
+
+def diagnose_class_performance(ground_truth, predictions, target_class):
+    """
+    Diagnose performance for a specific class by returning indexes of correct/incorrect predictions.
+    
+    Args:
+        ground_truth: List of ground truth examples in standard format
+        predictions: List of predictions in standard format  
+        target_class: The class to analyze (e.g., 'unit_type', 'unit_id')
+        
+    Returns:
+        Dictionary with indexes and examples categorized by correctness
+    """
+    
+    # Create mapping from text to index for faster lookup
+    gt_text_to_idx = {item['text']: idx for idx, item in enumerate(ground_truth)}
+    pred_text_to_idx = {item['text']: idx for idx, item in enumerate(predictions)}
+    
+    # Find examples where target class appears in ground truth
+    gt_examples_with_class = []
+    for idx, example in enumerate(ground_truth):
+        class_spans = [span for span in example.get('spans', []) if span['label'] == target_class]
+        if class_spans:
+            gt_examples_with_class.append(idx)
+    
+    # Helper function to get spans for target class
+    def get_class_spans(example, target_class):
+        return [span for span in example.get('spans', []) if span['label'] == target_class]
+    
+    # Helper function to compare spans (exact match)
+    def spans_match(gt_spans, pred_spans):
+        gt_positions = {(span['start'], span['end']) for span in gt_spans}
+        pred_positions = {(span['start'], span['end']) for span in pred_spans}
+        return gt_positions == pred_positions
+    
+    correct_predictions = []
+    incorrect_predictions = []
+    missing_predictions = []
+    
+    # Analyze each example that has the target class in ground truth
+    for gt_idx in gt_examples_with_class:
+        gt_example = ground_truth[gt_idx]
+        text = gt_example['text']
+        
+        # Find corresponding prediction
+        pred_idx = pred_text_to_idx.get(text)
+        if pred_idx is None:
+            missing_predictions.append({
+                'gt_idx': gt_idx,
+                'pred_idx': None,
+                'ground_truth': gt_example,
+                'prediction': None
+            })
+            continue
+            
+        pred_example = predictions[pred_idx]
+        
+        # Get spans for target class
+        gt_spans = get_class_spans(gt_example, target_class)
+        pred_spans = get_class_spans(pred_example, target_class)
+        
+        # Check if prediction matches ground truth exactly
+        if spans_match(gt_spans, pred_spans):
+            correct_predictions.append({
+                'gt_idx': gt_idx,
+                'pred_idx': pred_idx,
+                'ground_truth': gt_example,
+                'prediction': pred_example
+            })
+        else:
+            incorrect_predictions.append({
+                'gt_idx': gt_idx,
+                'pred_idx': pred_idx,
+                'ground_truth': gt_example,
+                'prediction': pred_example,
+                'gt_spans': gt_spans,
+                'pred_spans': pred_spans
+            })
+    
+    # Also find false positives (predictions where target class doesn't exist in GT)
+    false_positives = []
+    for pred_idx, pred_example in enumerate(predictions):
+        text = pred_example['text']
+        gt_idx = gt_text_to_idx.get(text)
+        
+        if gt_idx is not None:
+            gt_example = ground_truth[gt_idx]
+            gt_spans = get_class_spans(gt_example, target_class)
+            pred_spans = get_class_spans(pred_example, target_class)
+            
+            # If prediction has target class but GT doesn't
+            if pred_spans and not gt_spans:
+                false_positives.append({
+                    'gt_idx': gt_idx,
+                    'pred_idx': pred_idx,
+                    'ground_truth': gt_example,
+                    'prediction': pred_example,
+                    'pred_spans': pred_spans
+                })
+    
+    print(f"\n=== DIAGNOSTIC SUMMARY FOR CLASS: {target_class.upper()} ===")
+    print(f"Total examples with {target_class} in ground truth: {len(gt_examples_with_class)}")
+    print(f"Correct predictions: {len(correct_predictions)}")
+    print(f"Incorrect predictions: {len(incorrect_predictions)}")
+    print(f"Missing predictions: {len(missing_predictions)}")
+    print(f"False positives: {len(false_positives)}")
+    
+    if len(gt_examples_with_class) > 0:
+        accuracy = len(correct_predictions) / len(gt_examples_with_class)
+        print(f"Accuracy: {accuracy:.4f}")
+    
+    return {
+        'target_class': target_class,
+        'correct_predictions': correct_predictions,
+        'incorrect_predictions': incorrect_predictions,
+        'missing_predictions': missing_predictions,
+        'false_positives': false_positives,
+        'summary': {
+            'total_gt_examples': len(gt_examples_with_class),
+            'correct_count': len(correct_predictions),
+            'incorrect_count': len(incorrect_predictions),
+            'missing_count': len(missing_predictions),
+            'false_positive_count': len(false_positives)
+        }
+    }
+
+def print_diagnostic_examples(diagnostic_result, max_examples=5):
+    """
+    Print examples from diagnostic results for easy viewing.
+    """
+    target_class = diagnostic_result['target_class']
+    
+    print(f"\n=== EXAMPLES FOR {target_class.upper()} ===\n")
+    
+    # Show incorrect predictions
+    if diagnostic_result['incorrect_predictions']:
+        print(f"INCORRECT PREDICTIONS (showing up to {max_examples}):")
+        print("-" * 80)
+        for i, item in enumerate(diagnostic_result['incorrect_predictions'][:max_examples]):
+            print(f"Example {i+1}:")
+            print(f"  Text: {item['ground_truth']['text']}")
+            print(f"  Ground Truth {target_class}: {item['gt_spans']}")
+            print(f"  Predicted {target_class}: {item['pred_spans']}")
+            print(f"  GT Index: {item['gt_idx']}, Pred Index: {item['pred_idx']}")
+            print()
+    
+    # Show false positives
+    if diagnostic_result['false_positives']:
+        print(f"FALSE POSITIVES (showing up to {max_examples}):")
+        print("-" * 80)
+        for i, item in enumerate(diagnostic_result['false_positives'][:max_examples]):
+            print(f"Example {i+1}:")
+            print(f"  Text: {item['prediction']['text']}")
+            print(f"  Incorrectly predicted {target_class}: {item['pred_spans']}")
+            print(f"  GT Index: {item['gt_idx']}, Pred Index: {item['pred_idx']}")
+            print()
+    
+    # Show missing predictions
+    if diagnostic_result['missing_predictions']:
+        print(f"MISSING PREDICTIONS (showing up to {max_examples}):")
+        print("-" * 80)
+        for i, item in enumerate(diagnostic_result['missing_predictions'][:max_examples]):
+            print(f"Example {i+1}:")
+            print(f"  Text: {item['ground_truth']['text']}")
+            print(f"  Missing prediction for: {item['ground_truth']['spans']}")
+            print(f"  GT Index: {item['gt_idx']}")
+            print()

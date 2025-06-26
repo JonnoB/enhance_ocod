@@ -29,6 +29,6 @@ building_regex = r"\b(school|church|workshops|court|house|inn|tavern|hotel|annex
 # Some addresses are written as "22 to 35" or "22-35" this regex helps process these addresses
 xx_to_yy_regex = r"\d+[a-z]?\s?(?:to|-|/)\s?\d+[a-z]?\b"
 
-other_classes_regex = r"(airspace|unit|plot|store|storage|storage pod|storage locker|\broom|suite|studio)"
+other_classes_regex = r"(airspace|unit|land|plot|store|storage|storage pod|storage locker|\broom|suite|studio)"
 businesses_regex = r"((cinema)|(hotel)|(office)|(pub)|(business)|(cafe)|(restaurant)|(unit)|(store))"
 company_type_regex = r"(company|ltd|limited|plc)"
