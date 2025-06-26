@@ -63,7 +63,8 @@ def main():
     # Create output directory name based on configuration
     output_dir_name = f"address_parser_{args.model_suffix}"
     output_dir = str(SCRIPT_DIR / ".." / "models" / output_dir_name)
-    final_model_path = f"/teamspace/studios/this_studio/enhance_ocod/models/{output_dir_name}/final_model"
+    final_model_path = SCRIPT_DIR / ".." / "models" / output_dir_name / "final_model"
+    performance_folder = SCRIPT_DIR / ".." / "data" / "model_performance"
     
     print(f"Configuration:")
     print(f"  Data folder: {args.data_folder}")
@@ -168,7 +169,7 @@ def main():
     overall_df, class_df = evaluate_model_performance(
         model_path=final_model_path,
         data_path=val_data_path,
-        output_dir=final_model_path,
+        output_dir=performance_folder,
         dataset_name="test",
         max_length=args.max_length
     )
