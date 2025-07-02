@@ -1,120 +1,122 @@
-# The Enhanced OCOD dataset
+# Enhanced OCOD: Offshore Companies Ownership Data Processing Pipeline
 
-This repo provides the pipeline to create the enhanced OCOD dataset, it cleans and enhances the publicly available [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) produced by Land Registry. This Land Registry OCOD dataset contains the addresses and additional metadata, UK property owned by offshore companies. The OCOD dataset has several issues making it difficult to use. These difficulties include, address in free text format, multiple properties in a single title number, no indication on property usage type (Residential, Business, etc).
+## Overview
+This repository provides a comprehensive pipeline and Python library for cleaning, enhancing, and analyzing the UK Land Registry's Offshore Companies Ownership Data (OCOD). The enhanced OCOD dataset resolves many issues with the raw OCOD data, making it suitable for research, analysis, and reporting on UK property owned by offshore companies.
 
-The enhanced OCOD dataset, attempts to resolve these issues. The pipeline tidies the data ensuring that there is a single property per line, it also parses the address to make it easier to use and locates the properties within the [LSOA/OA](https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeography) system developed by the Office of National Statistics. Finally the OCOD dataset classifies properties into 5 categories, residential, Business, Airspace, Land, Carpark. Any properties which do not have enough information to be put in one of the categories are given the class "unknown".
+The project includes:
+- A reusable, modular Python library (`src/enhance_ocod`) for all data processing stages
+- Example and utility scripts (`scripts/`) for training NER models, running the pipeline, and more
+- Documentation and reproducible workflows to create, update, and analyze the enhanced OCOD dataset
 
-The enhanced OCOD dataset was demonstrated in the paper ['Inspecting the laundromat: Mapping and characterising offshore owned residential property in London'](https://doi.org/10.1177/23998083231155483). The code for the analysis in the paper can be found [here](https://github.com/JonnoB/inspecting_the_laundromat).
+## Key Features
+- **End-to-End Pipeline:** From raw OCOD data to a classified, enriched, and structured dataset
+- **Advanced Address Parsing:** Disaggregates multi-property titles and parses free-text addresses
+- **Integration with External Data:** Uses ONS Postcode Directory, Land Registry Price Paid Data, and VOA business ratings for enrichment
+- **Property Classification:** Assigns properties to categories (Residential, Business, Airspace, Land, Carpark, Unknown)
+- **NER Model Training & Weak Labelling:** Tools for custom NER models and weak supervision
+- **Reproducible & Extensible:** Library-based design for maintainability and reuse
 
+## Project Structure
+```
+enhance_ocod/
+├── src/enhance_ocod/   # Core Python library
+│   ├── address_parsing.py
+│   ├── inference.py
+│   ├── labelling/
+│   │   ├── ner_regex.py
+│   │   ├── ner_spans.py
+│   │   └── weak_labelling.py
+│   ├── locate_and_classify.py
+│   ├── preprocess.py
+│   ├── price_paid_process.py
+│   └── training.py
+├── scripts/            # Example and utility scripts
+├── data/               # Input and output data
+├── requirements.txt    # Python dependencies
+├── pyproject.toml      # Project metadata
+├── README.md           # Documentation
+```
 
-# The Dataset
+## Installation
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/JonnoB/enhance_ocod/tree/main
+   cd enhance_ocod
+   ```
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-The compressed dataset from the time the paper was written is included with this repo as 'OCOD_classes.tar.xz'. However, it will become out of date and so it is reccomended to rebuild the dataset with current information. The following section describes how to generate the enhanced OCOD dataset.
+## Data Requirements
+To recreate or update the enhanced OCOD dataset, several open datasets must be downloaded and placed in the `data/` directory. Rename as follows:
 
-# How to create the Enhanced OCOD dataset
-This repo contains the code needed to create the enchanced OCOD dataset. The script [full_ocod_parse_process.py] can be run from a python environment. The process is quite memory intense using a machine with 16Gb is advisable.
+| Dataset                                                                                             | Rename to            | Type   | API Available |
+|-----------------------------------------------------------------------------------------------------|----------------------|--------|--------------|
+| [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod)                         | OCOD.csv             | csv    | Yes          |
+| [ONSPD](https://open-geography-portalx-ons.hub.arcgis.com/datasets/ons::ons-postcode-directory-february-2025-for-the-uk/about) | ONSPD.zip            | zip    | Yes          |
+| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads) | price_paid_files     | folder | No           |
+| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)                   | VOA_ratings.csv      | csv    | Yes          |
 
-## Project set-up
-
-- clone repo
-- navigate to repo folder
-- navigate to empty_homes_data
-- download required opensource data and rename files/folder (see below)
-- download spaCy model from [this OSF data repository](https://osf.io/khavm/) and extract in the empty_homes_data directory of the repo
-
-## Python process
-
-in the command line type the following from the repo root folder
-
-- `pip install spacy numpy pandas` #installs the required libraries
-- `python -m spacy download en_core_web_lg` #the spaCy model uses the large vector language model optimized for CPU
-- `python ./full_ocod_parse_process.py ./data/ OCOD.csv OCOD_enhanced.csv` 
-
-The python command takes three arguments the path to the data folder (shown above as `./data/`), the name of the file to be parsed (`OCOD.csv`), the name of the file created at the end of the parsing process (`OCOD_enhanced.csv`). Note all files need to be inside the data folder. 
-
-
-The script itself is [full_ocod_parse_process.py](full_ocod_parse_process.py)
-
-## During the parsing and classification process
-
-The process takes about 15 minutes and is broken into several stages. The stages provide information on progress and at the a file called
-'enhanced_ocod_dataset.csv' is saved into the the 'empty_homes_data' folder.
-
-The key stages are
-
-- NER labelling using a pre-trained spaCy model
-- Parsing
-- Expanding so that there is only one property per row
-- Locating in the Census Geography system
-- Classifying into the 5 types and 'unknown'
-- Contracting, by removing irrelevant duplicated data
-- Saving the enhanced ocod dataset
-
-
-# Required Datasets
-
-In order to re-create or update the Enhanced OCOD dataset several opensource datasets are required. This datasets should be downloaded into the empty_homes_data folder in this repo and renamed as below. All the data is free, however the licences are not all [OGL](https://www.nationalarchives.gov.uk/what-is-open-government-licence/), 'n addition the OCOD dataset requires the user create and account.
-
-| Dataset                                                                                             | Change file/folder name to | Type   | Available on API |
-|-----------------------------------------------------------------------------------------------------|----------------------------|--------|------------------|
-| [ OCOD dataset ]( https://use-land-property-data.service.gov.uk/datasets/ocod )\*| OCOD.csv                   | csv    | [Yes](https://use-land-property-data.service.gov.uk/api-information)              |
-| [ONSPD](https://open-geography-portalx-ons.hub.arcgis.com/datasets/ons::ons-postcode-directory-february-2025-for-the-uk/about)\*\*                                         | ONSPD.zip                  | zip    | [Yes](https://www.api.gov.uk/ons/open-geography-portal/#open-geography-portal)              |
-| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads)\*\*\* | price_paid_files           | folder | [No](https://landregistry.data.gov.uk/app/doc/ppd/)              |
-| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)\*\*\*\*                  | VOA_ratings.csv            | csv    | [Yes](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)              |
-
-Note:
-
-\* The OCOD dataset is a convoluted experience to get hold of you need to create an account and also use a bank card to confim identity, the bank card will be charged £0.0. Whether this much security is necessary is debatable, and in fact can be debated by contacting your [MP to complain](https://members.parliament.uk/FindYourMP).
-
-\*\* Only folder name of the ONSPD zip needs to be changed the data inside doesn't. The script searches for the correct file inside. The ONSPD file can be fiddly to find, as there are a lot of files with ONSPD in the name try searching "ONSPD" followed by the year e.g. "ONSPD 2025".
-Future versions of the script may make it more flexible with regards file names.
-
-\*\*\* The price paid dataset can be downloaded as the entire dataset or as individual years (which ever years are appropriate for the analysis), the data is pre-processed and saved in a folder by year, this substantially speeds up later stages of the pipeline. Overall downloading the whole dataset is probably the best option. 
-
-There is a SPARQL database for programmatically downloading price paid data, it is slow and overall a better option is to manually download the csv's an work with those.
-
-\*\*\*\* There are several files in the dataset. The one with a name similar to 'uk-englandwales-ndr-20xx-listentries-compiled-epoch-00xx-baseline-csv.csv' is the correct one
-
-# Additional code
-
-Several notebooks are used in this repo. These notebooks were used to develop the final script. The notebooks used in this paper are as follows.
-
-1. [Unit tag and span cleaning](unit_tag_and_span_cleaning.ipynb)
-2. [expanding tagged addresses](expanding_tagged_addresses.ipynb)
-3. [Locating and classifying the ocod dataset](locating_and_classifying_the_ocod_dataset.ipynb)
-
-In order to run these scripts you must download several opensource datasets produced by the UK government.
-Please see the paper's data section in the method for details.
-
-# Contributing
-
-This dataset pipeline is meant to be used, suggestions and helpful commits and improvements are welcomed.
-
-# Citing this dataset
-
-If you use this repository please cite the paper
-
-What's in the laundromat? Mapping and characterising offshore owned residential property in London	 [https://doi.org/10.1177/2399808323115548](https://doi.org/10.1177/2399808323115548)
-
-# OGL notices
-
-- Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0. (Price Paid)
-- Information produced by HM Land Registry. © Crown copyright (OCOD)
-- Contains OS data © Crown copyright and database right 2022
-- Contains Royal Mail data © Royal Mail copyright and database right 2022
-- Source: Office for National Statistics licensed under the Open Government Licence v.3.0
+**Note:**
+- The OCOD dataset is a convoluted experience to get hold of you need to create an account and also use a bank card to confim identity, the bank card will be charged £0.0. Whether this much security is necessary is debatable, and in fact can be debated by contacting your [MP to complain](https://members.parliament.uk/FindYourMP).
 
 
-# Todo
+## Usage
+You can use the project in two main ways:
 
-The next thing I need to do is either download the spacy model or retrain it on the data in the repo. Then test the entire pipeline
+### 1. As a Library
+Import modules from `src/enhance_ocod` in your own scripts:
+```python
+from enhance_ocod.inference import test_single_address
+
+test_single_address(address="36 - 49, chapel street, London, se45 6pq")
+# ...
+```
+
+### 2. Using Provided Scripts
+- **Run the full pipeline:**
+  ```bash
+  python full_ocod_parse_process.py ./data/ OCOD.csv OCOD_enhanced.csv
+  ```
+  - Arguments: `<data_folder> <input_file> <output_file>` (all files must be in the data folder)
+
+- **Train an NER Model:**
+  ```bash
+  python scripts/run_experiments.py
+  ```
+
+- **Other scripts:**
+  See the `scripts/` directory for additional utilities (e.g., `parse_ocod_history.py`, `model_test.py`, etc.)
+
+## Pipeline Stages
+1. **NER Labelling** using a pre-trained modernBERT model
+2. **Parsing** and expanding addresses
+3. **Disaggregation** so each row is a single property
+4. **Geographic Location** using ONS/OA system
+5. **Classification** into property types
+6. **Cleanup** and deduplication
+7. **Saving** the enhanced dataset
+
+## Notebooks
+Several Jupyter notebooks are included for development and analysis (located in the `notebooks/` directory). These are primarily for the analysis used in the paper:
+- `notebooks/exploratory_analysis.ipynb`
+- `notebooks/price_paid_msoa.ipynb`
+- `notebooks/test_regex.ipynb`
+
+## Contributing
+Contributions and suggestions are welcome! Please open issues or pull requests.
+
+## Citation
+If you use this repository, please cite:
+- J Bourne et al (2023). "What's in the laundromat? Mapping and characterising offshore owned residential property in London"	 [https://doi.org/10.1177/2399808323115548](https://doi.org/10.1177/2399808323115548)
 
 
-- re-implement the span functions to work with snorkel.
-- Re-check the performance of the labelling functions, would a hybrid approach work well
-- compare weak-lablled, weak-lablled bert-trained, dev trained, hybrid, which is best?
-- The original version had some manual data quality checks, I need to see if these are still issues, certain things like kkey errors saying 10-1124 not 100-112 will still be there and having a method to identify these error would be helpful.
-- Implement API module
-- perform memory and speed profiling on the process, or different sections of it, what optimisations would speed things up?
-- tests!
-- make pypi installable
+## License
+This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+## Acknowledgements
+- The enhanced OCOD dataset and pipeline were demonstrated in the paper: [Inspecting the laundromat](https://doi.org/10.1177/23998083231155483)
+- Built on open data from Land Registry, ONS, and VOA
+
+---
