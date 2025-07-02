@@ -72,6 +72,7 @@ def expand_dataframe_numbers(df2, column_name, print_every = 1000, min_count = 1
     #once all the lines have been expanded concatenate them into a single dataframe
     
     out = pd.concat(temp_list)
+    out = out.astype({column_name: 'string'})
     #The data type coming into the function is a string as it is in the form xx-yy
     #It needs to return a string as well otherwise there will be a pandas columns of mixed types
     #ehich causes problems later on
@@ -380,6 +381,7 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
                            names=VOA_headers,
                            usecols=usecols,
                            index_col=False,
+                           dtype=str,
                            )
     else:
         voa_businesses = pd.read_csv(file_path,
@@ -389,9 +391,10 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
                        names=VOA_headers,
                        usecols=usecols,
                        index_col=False,
+                       dtype=str,
                        )
 
-    # OPTIMIZATION 1: Early filtering BEFORE expensive string operations
+    # Early filtering BEFORE expensive string operations
     # Filter out unwanted data first to reduce processing volume
     print(f"Initial rows: {len(voa_businesses)}")
     
@@ -403,30 +406,24 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
     parking_mask = voa_businesses['primary_and_secondary_description_code'].isin(excluded_codes)
     voa_businesses = voa_businesses[~parking_mask]
 
-    # OPTIMIZATION 2: Batch all string operations to minimize pandas overhead
-    # Convert to lowercase once and reuse
     voa_businesses['postcode'] = voa_businesses['postcode'].str.lower()
     voa_businesses['street'] = voa_businesses['street'].str.lower()
     
-    # OPTIMIZATION 3: Chain regex operations to reduce passes through data
+    # Chain regex operations to reduce passes through data
     voa_businesses['postcode2'] = voa_businesses['postcode'].str.replace(r"\s", "", regex=True)
     
-    # Single chained operation for street_name2
     voa_businesses['street_name2'] = (voa_businesses['street']
                                      .str.replace(r"'", "", regex=True)
                                      .str.replace(r"s(s)?(?=\s)", "", regex=True)  
                                      .str.replace(r"\s", "", regex=True))
 
-    # OPTIMIZATION 4: Do clean_street_numbers AFTER merge to reduce processing
     # First merge to reduce dataset size
-
     voa_businesses = voa_businesses.merge(postcode_district_lookup, left_on='postcode2', right_on="postcode2", how='inner')
 
     
     # Now do expensive operations on smaller dataset
     voa_businesses = clean_street_numbers(voa_businesses, original_column='number_or_name')
 
-    # OPTIMIZATION 5: Use faster string operations for specific cases
     westfield_mask = voa_businesses['full_property_identifier'].str.contains('WESTFIELD SHOPPING CENTRE', na=False)
     if westfield_mask.any():  # Only process if there are matches
         voa_businesses.loc[westfield_mask, 'street_number'] = np.nan
@@ -888,7 +885,7 @@ def classification_type1(ocod_data):
             ocod_data['address_match'],
             ocod_data['property_address'].str.contains(r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|^store(?:s)?\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)", case = False), 
             ocod_data['property_address'].str.contains(r"^[a-z\s']+\b(?:land(?:s)?|plot(?:s)?)\b", case = False), #land with words before it
-            ocod_data['building_name'].str.contains(r'\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)'), #pubs in various guises
+            ocod_data['building_name'].str.contains(r'\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)',case=False,  na=False), #pubs in various guises
             ocod_data['oa_busi_building'].notnull(),#a business building was matched
             ocod_data['business_address'].notnull()
 

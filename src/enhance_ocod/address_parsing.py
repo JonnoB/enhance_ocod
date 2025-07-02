@@ -260,9 +260,12 @@ def final_parsed_addresses(df,all_entities ,multi_property, multi_unit_id, all_m
         
     #unit id and street number that does does not have the xx to yy format and so has already been expanded by spreading and backfilling
     expanded_street_simple = df[df.datapoint_id.isin(multi_property) & 
-                            (~df.street_number.str.contains(xx_to_yy_regex).fillna(False)) & (df.street_number!='block')].reset_index()
+                            (~df.street_number.str.contains(xx_to_yy_regex).fillna(False)) & 
+                            (df.street_number!='block')].reset_index()
+
     expanded_unit_id_simple = df[df.datapoint_id.isin(multi_unit_id) & 
-                             (~df.unit_id.str.contains(xx_to_yy_regex).fillna(False)) & (df.unit_id!='block')].reset_index()
+                            (~df.unit_id.str.contains(xx_to_yy_regex).fillna(False)) & 
+                            (df.unit_id!='block')].reset_index()
 
     #remove the multi-addresses
     single_address_only =all_entities[~all_entities['datapoint_id'].isin(all_multi_ids)]
@@ -318,7 +321,7 @@ def parsing_and_expansion_process(
             "building_name",
             "street_name", 
             "street_number",
-            "filter_type",
+            "number_filter",
             "unit_id",
             "unit_type",
             "city",
@@ -334,8 +337,6 @@ def parsing_and_expansion_process(
     # Ensurinng string prevents errors later when cleaning is performed on street_name and other variables
     # This is not being changed to default behaviour as I may need to implement more significant changes later
     df = ensure_required_columns(df, required_columns, "")
-
-    df.rename(columns = {'filter_type':'number_filter'}, inplace = True)
 
     # Blockers prevent the filling of wrong information. As an example if a building is going to back fill up 
     # previous addresses it should not back fill past another street as this is highly unlikely to be the same building
@@ -408,7 +409,8 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
     
     if keep_columns is None:
         keep_columns = ['title_number', 'tenure', 'district', 'county',
-                        'region', 'price_paid', 'property_address']
+                        'region', 'price_paid', 'property_address', 
+                        'country_incorporated_1','country_incorporated_(1)']
     
     def column_filter(x):
         return x.lower().replace(" ", "_") in keep_columns
@@ -461,13 +463,9 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
     
     ocod_data.reset_index(drop=True, inplace=True)
     
-    # Apply consistent preprocessing using the harmonized function
-    # Convert to lowercase first, then apply the tokenization preprocessing
     ocod_data['property_address'].str.lower()
-    
-    #This did not help
-    # Use the same preprocessing function as training
-    #ocod_data['property_address'] = preprocess_text_for_tokenization(address_series)
+    ocod_data.rename(columns = {'country_incorporated_1':'country_incorporated',
+                                'country_incorporated_(1)':'country_incorporated'}, inplace = True)
     
     return ocod_data
 
@@ -495,8 +493,8 @@ def post_process_expanded_data(expanded_data, ocod_data):
 
     #re-order the columns and drop columns that are not needed
 
-    full_expanded_data =full_expanded_data[['title_number', 'within_title_id', 'unique_id', 'within_larger_title',  'tenure','unit_id', 'unit_type','building_name','street_number', 'street_name', 'postcode','city',  'district', 'county', 'region',
-       'price_paid' ,'property_address']].replace('block', np.NaN)
+    full_expanded_data = full_expanded_data[['title_number', 'within_title_id', 'unique_id', 'within_larger_title',  'tenure','unit_id', 'unit_type','building_name','street_number', 'street_name', 'postcode','city',  'district', 'county', 'region',
+       'price_paid' ,'property_address', 'country_incorporated']].replace('block', np.NaN)
     
     return full_expanded_data
 

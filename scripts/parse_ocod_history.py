@@ -70,7 +70,16 @@ from tqdm import tqdm
 import time
 import gc  # Add for memory management
 
+import pickle
+import json
+from pathlib import Path
+
+
 import torch
+
+# There is a warning related to bfill and ffill which is basically internal to pandas so silencing here
+import warnings
+warnings.filterwarnings('ignore', message='.*Downcasting object dtype arrays.*')
 
 torch.set_float32_matmul_precision('medium')
 
@@ -86,12 +95,18 @@ processed_price_paid_dir = SCRIPT_DIR.parent / "data" / "processed_price_paid"
 voa_path = SCRIPT_DIR.parent / "data" / "2023_non_domestic_rating_list_entries.zip"
 output_dir.mkdir(parents=True, exist_ok=True)
 
+parsed_results_dir = SCRIPT_DIR.parent / "data" / "parsed_ocod_dicts"
+parsed_results_dir.mkdir(parents=True, exist_ok=True)
+
 # List of all zip files in input_dir
 #
 # TESTING!!! only 10 files!
 #
 all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])
 
+
+#test_indices = [0, 25, 50, 75]
+#all_files = [all_files[i] for i in test_indices if i < len(all_files)]
 print(f"Found {len(all_files)} OCOD history files.")
 
 # Load common data once (if these don't change between files)
@@ -102,6 +117,9 @@ voa_businesses = load_voa_ratinglist(str(voa_path), postcode_district_lookup)
 for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     out_name = zip_file.stem + ".parquet"
     out_path = output_dir / out_name
+    
+    # Define parsed results file path
+    parsed_results_file = parsed_results_dir / f"{zip_file.stem}_parsed_results.pkl"
 
     if out_path.exists():
         print(f"Skipping {zip_file.name}: already processed.")
@@ -115,19 +133,32 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     ###############
     # Parse addresses
     ###############
-    print(f"Parsing addresses for {zip_file.name}...")
-    start_time = time.time()
+    if parsed_results_file.exists():
+        print(f"Loading cached parsing results for {zip_file.name}...")
+        with open(parsed_results_file, 'rb') as f:
+            results = pickle.load(f)
+        print(f"Loaded cached results with success rate: {results['summary']['success_rate']:.1%}")
+    else:
+        print(f"Parsing addresses for {zip_file.name}...")
+        start_time = time.time()
 
-    results = parse_addresses_pipeline(
-        df=ocod_data,
-        model_path=str(model_path),
-        target_column="property_address",
-    )
+        results = parse_addresses_pipeline(
+            df=ocod_data,
+            short_batch_size = 128,# The default seems really slow, might be to do with loading not sure
+            model_path=str(model_path),
+            target_column="property_address",
+        )
 
-    end_time = time.time()
-    print(f"Address parsing took {end_time - start_time:.2f} seconds")
-    print(f"Success rate: {results['summary']['success_rate']:.1%}")
+        end_time = time.time()
+        print(f"Address parsing took {end_time - start_time:.2f} seconds")
+        print(f"Success rate: {results['summary']['success_rate']:.1%}")
+        
+        # Save parsing results
+        print(f"Saving parsing results to {parsed_results_file}...")
+        with open(parsed_results_file, 'wb') as f:
+            pickle.dump(results, f)
 
+    # Continue with post-parsing processing
     test = convert_to_entity_dataframe(results)
     test = parsing_and_expansion_process(all_entities=test)
     ocod_data = post_process_expanded_data(test, ocod_data)
@@ -173,7 +204,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     columns = ['title_number', 'within_title_id', 'within_larger_title', 'unique_id', 
               'unit_id', 'unit_type', 'building_name', 'street_number', 'street_name', 
               'postcode', 'city', 'district', 'region', 'property_address', 'oa11cd', 
-              'lsoa11cd', 'msoa11cd', 'lad11cd', 'class', 'class2']
+              'lsoa11cd', 'msoa11cd', 'lad11cd','country_incorporated' ,'class', 'class2']
 
     ocod_data = ocod_data.loc[:, columns].rename(columns={
         'within_title_id': 'nested_id',
