@@ -32,7 +32,6 @@ enhance_ocod/
 │   └── training.py
 ├── scripts/            # Example and utility scripts
 ├── data/               # Input and output data
-├── full_ocod_parse_process.py # Main script to run the pipeline
 ├── requirements.txt    # Python dependencies
 ├── pyproject.toml      # Project metadata
 ├── README.md, readme2.md, readme3.md # Documentation
@@ -69,7 +68,9 @@ You can use the project in two main ways:
 ### 1. As a Library
 Import modules from `src/enhance_ocod` in your own scripts:
 ```python
-from enhance_ocod.address_parsing import parse_address
+from enhance_ocod.inference import test_single_address
+
+test_single_address(address="36 - 49, chapel street, London, se45 6pq")
 # ...
 ```
 
@@ -89,7 +90,7 @@ from enhance_ocod.address_parsing import parse_address
   See the `scripts/` directory for additional utilities (e.g., `parse_ocod_history.py`, `model_test.py`, etc.)
 
 ## Pipeline Stages
-1. **NER Labelling** using a pre-trained spaCy model or custom models
+1. **NER Labelling** using a pre-trained modernBERT model
 2. **Parsing** and expanding addresses
 3. **Disaggregation** so each row is a single property
 4. **Geographic Location** using ONS/OA system
@@ -98,10 +99,12 @@ from enhance_ocod.address_parsing import parse_address
 7. **Saving** the enhanced dataset
 
 ## Notebooks
-Several Jupyter notebooks are included for development and analysis:
-- `unit_tag_and_span_cleaning.ipynb`
-- `expanding_tagged_addresses.ipynb`
-- `locating_and_classifying_the_ocod_dataset.ipynb`
+Several Jupyter notebooks are included for development and analysis (located in the `notebooks/` directory):
+- `notebooks/exploratory_analysis.ipynb`
+- `notebooks/price_paid_msoa.ipynb`
+- `notebooks/test_regex.ipynb`
+
+**Tip:** For all scripts and notebooks, it is best to set your working directory to the repository root. This ensures all relative paths (e.g., `notebooks/`, `data/`, `src/`) work as documented.
 
 ## Contributing
 Contributions and suggestions are welcome! Please open issues or pull requests.
@@ -119,4 +122,3 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 - Built on open data from Land Registry, ONS, and VOA
 
 ---
-For more details, see the original `README.md` and `readme2.md` files, or contact the maintainer.

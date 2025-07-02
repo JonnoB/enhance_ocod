@@ -421,3 +421,73 @@ def convert_to_entity_dataframe(results: Dict, batch_size: int = 50000) -> pd.Da
     print(f'Total entities extracted: {len(all_entities):,}')
     
     return all_entities
+
+
+def test_single_address(address="36 - 49, chapel street, London, se45 6pq"):
+    """
+
+    This needs to be modified do it by default downloads the model from HF!
+
+    Test the address parsing and NER pipeline on a single address string.
+
+    This function initializes the AddressParserInference model using a specified model path
+    and runs the address parsing pipeline on a single example address. It prints the results,
+    including the original address, number of entities found, details of each entity, and
+    parsed address components. Errors during initialization or inference are caught and
+    printed with traceback information for debugging.
+
+    Args:
+        address (str, optional): The address string to be parsed and analyzed. Defaults to
+            "36 - 49, chapel street, London, se45 6pq".
+
+    Returns:
+        None. Prints output to the console.
+    """
+    # Initialize your parser
+    model_path = "models/address_parser_dev/final_model"  # Replace with your actual model path
+    
+    try:
+        print("Initializing parser...")
+        parser = AddressParserInference(
+            model_path=model_path,
+            max_length=512,
+            stride=50,
+            use_fp16=True  # Set to False for debugging to avoid GPU issues
+        )
+        print("✓ Parser initialized successfully")
+        
+        # Test address
+        test_address = address
+        print(f"\nTesting address: '{test_address}'")
+        
+        # Make prediction
+        result = parser.predict_single_address(test_address, row_index=0)
+        
+        # Print results
+        print("\n" + "="*50)
+        print("RESULTS:")
+        print("="*50)
+        
+        if "error" in result:
+            print(f"❌ ERROR: {result['error']}")
+        else:
+            print(f"✓ Original address: {result['original_address']}")
+            print(f"✓ Number of entities found: {len(result['entities'])}")
+            
+            if result['entities']:
+                print("\nEntities found:")
+                for i, entity in enumerate(result['entities']):
+                    print(f"  {i+1}. {entity['type']}: '{entity['text']}' (confidence: {entity['confidence']:.3f})")
+                
+                print("\nParsed components:")
+                for key, value in result['parsed_components'].items():
+                    print(f"  {key}: {value}")
+            else:
+                print("⚠️  No entities found")
+        
+        print("="*50)
+        
+    except Exception as e:
+        print(f"❌ Failed to initialize or run parser: {str(e)}")
+        import traceback
+        traceback.print_exc()
