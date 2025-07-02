@@ -50,6 +50,7 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 from enhance_ocod.locate_and_classify import clean_street_numbers
+from pandas.api.types import CategoricalDtype
 
 
 def process_single_chunk(df, postcode_district_lookup):
@@ -79,12 +80,12 @@ def process_single_chunk(df, postcode_district_lookup):
     df = df.merge(postcode_district_lookup, how='left', left_on="postcode2", right_on="postcode2")
     
     # Keep necessary columns including price
-    final_columns = ['street_name2', 'street_number', 'postcode2', 'district', 
-                    'paon', 'lad11cd', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'price', 'year']
+    #final_columns = ['street_name2', 'street_number', 'postcode2', 'district', 
+     #               'paon', 'lad11cd', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'price', 'year']
     
-    available_columns = [col for col in final_columns if col in df.columns]
+    #available_columns = [col for col in final_columns if col in df.columns]
     
-    return df[available_columns]
+    return df#[available_columns]
 
 
 def combine_temp_files_for_year(year, output_dir, remaining_data):
@@ -118,20 +119,25 @@ def preprocess_and_save_by_year(file_path, postcode_district_lookup, output_dir=
     """
     Process CSV in chunks, filter by year during reading, and save by year
     """
+
+    # making loading more efficient by being explicit about type, for the large file this should make it faster
     dtype_dict = {
         'paon': 'string',
         'street': 'string', 
         'locality': 'string',
         'postcode': 'string',
         'price': 'int32',
-        'date_of_transfer': 'string'
+        'date_of_transfer': 'string',
+        'district': 'string',
+        'property_type': CategoricalDtype(categories=['D', 'S', 'T', 'F', 'O']),
+        'ppd_category_type': CategoricalDtype(categories=['A', 'B'])
     }
     
     price_paid_headers = ['transaction_unique_identifier', 'price', 'date_of_transfer', 'postcode', 'property_type', 
                          'old_new', 'duration', 'paon', 'saon', 'street', 'locality', 'town', 'district', 'county',
                          'ppd_category_type', 'record_status']
     
-    columns_to_keep = ['paon', 'street', 'locality', 'postcode', 'price', 'date_of_transfer', 'district']
+    columns_to_keep = ['paon', 'street', 'locality', 'postcode', 'price', 'date_of_transfer', 'district', 'property_type', 'ppd_category_type' ]
     
     # Create output directory
     Path(output_dir).mkdir(exist_ok=True)
@@ -139,44 +145,56 @@ def preprocess_and_save_by_year(file_path, postcode_district_lookup, output_dir=
     # Dictionary to accumulate data by year
     yearly_accumulators = {}
     chunk_size = 500000
+
+    print("Counting total rows for progress tracking...")
+    with open(file_path, 'rb') as f:
+        total_rows = sum(1 for _ in f)
+    
+    processed_rows = 0
     
     print("Processing CSV in chunks and filtering by year...")
     
     # Read the single mega CSV file
-    for chunk in tqdm(pd.read_csv(
-        file_path,  # Now this is the single CSV file path
-        names=price_paid_headers,
-        dtype=dtype_dict,
-        usecols=columns_to_keep,
-        chunksize=chunk_size
-    )):
-        # Extract year from date in chunk
-        chunk['year'] = pd.to_datetime(chunk['date_of_transfer'], errors='coerce').dt.year
-        
-        # Remove rows with invalid dates
-        chunk = chunk.dropna(subset=['year'])
-        chunk['year'] = chunk['year'].astype(int)
-        
-        # Process the chunk
-        processed_chunk = process_single_chunk(chunk, postcode_district_lookup)
-        
-        if processed_chunk is not None and len(processed_chunk) > 0:
-            # Group by year and accumulate
-            for year, year_data in processed_chunk.groupby('year'):
-                if year not in yearly_accumulators:
-                    yearly_accumulators[year] = []
-                
-                yearly_accumulators[year].append(year_data.drop('year', axis=1))
-                
-                # Save intermediate files if accumulator gets too large (optional memory management)
-                if len(yearly_accumulators[year]) >= 10:  # Every 10 chunks per year
-                    temp_df = pd.concat(yearly_accumulators[year], ignore_index=True)
-                    temp_file = os.path.join(output_dir, f"temp_{year}_{len(os.listdir(output_dir))}.parquet")
-                    temp_df.to_parquet(temp_file, index=False)
-                    yearly_accumulators[year] = []  # Reset accumulator
-                    del temp_df
-        
-        del chunk, processed_chunk
+    with tqdm(total=total_rows, desc="Processing rows", unit="rows", unit_scale=True) as pbar:
+        for chunk in pd.read_csv(
+            file_path,
+            names=price_paid_headers,
+            dtype=dtype_dict,
+            usecols=columns_to_keep,
+            chunksize=chunk_size
+        ):
+            # Extract year from date in chunk
+            chunk['year'] = pd.to_datetime(chunk['date_of_transfer'], errors='coerce').dt.year
+            
+            # Remove rows with invalid dates
+            chunk = chunk.dropna(subset=['year'])
+            chunk['year'] = chunk['year'].astype(int)
+            
+            # Process the chunk
+            processed_chunk = process_single_chunk(chunk, postcode_district_lookup)
+            
+            if processed_chunk is not None and len(processed_chunk) > 0:
+                # Group by year and accumulate
+                for year, year_data in processed_chunk.groupby('year'):
+                    if year not in yearly_accumulators:
+                        yearly_accumulators[year] = []
+                    
+                    yearly_accumulators[year].append(year_data.drop('year', axis=1))
+                    
+                    # Save intermediate files if accumulator gets too large (optional memory management)
+                    if len(yearly_accumulators[year]) >= 10:  # Every 10 chunks per year
+                        temp_df = pd.concat(yearly_accumulators[year], ignore_index=True)
+                        temp_file = os.path.join(output_dir, f"temp_{year}_{len(os.listdir(output_dir))}.parquet")
+                        temp_df.to_parquet(temp_file, index=False)
+                        yearly_accumulators[year] = []  # Reset accumulator
+                        del temp_df
+            
+            # Update progress
+            chunk_rows = len(chunk)
+            processed_rows += chunk_rows
+            pbar.update(chunk_rows)
+
+            del chunk, processed_chunk
     
     # Final save: combine any remaining data and temp files
     print("Combining and finalizing yearly files...")
@@ -228,3 +246,118 @@ def load_and_process_pricepaid_data(file_path, processed_dir, postcode_district_
     
     # Load only the years needed
     return load_years_data(years_needed, processed_dir)
+
+
+
+def get_date_from_ocod_filename(filename):
+    """Extract year and month from OCOD filename"""
+    match = re.search(r'OCOD_FULL_(\d{4})_(\d{2})', filename)
+    if match:
+        year = int(match.group(1))
+        month = int(match.group(2))
+        return year, month
+    return None, None
+
+def get_rolling_date_range(year, month, years_back=3):
+    """Get the date range for rolling 3 years"""
+    end_date = datetime(year, month, 1)
+    start_date = datetime(year - years_back, month, 1)
+    return start_date, end_date
+
+def load_and_filter_price_data(price_folder, start_date, end_date):
+    """Load and filter price paid data for a specified date range.
+    
+    Loads price paid data from parquet files for all years within the
+    specified date range and filters the data to only include records
+    within that range.
+    
+    Parameters
+    ----------
+    price_folder : pathlib.Path
+        Path to the folder containing price paid parquet files.
+        Files should be named 'price_paid_{year}.parquet'.
+    start_date : datetime
+        The start date for filtering the data (inclusive).
+    end_date : datetime
+        The end date for filtering the data (inclusive).
+    
+    Returns
+    -------
+    pandas.DataFrame
+        A concatenated DataFrame containing all filtered price data
+        within the specified date range. Returns an empty DataFrame
+        if no data is found or loaded.
+    
+    Notes
+    -----
+    - The function expects parquet files to contain a 'date_of_transfer' column
+    - Missing files are logged but do not cause the function to fail
+    - The 'date_of_transfer' column is automatically converted to datetime format
+    - Warnings are printed for files missing the expected date column
+    
+    Examples
+    --------
+    >>> from pathlib import Path
+    >>> from datetime import datetime
+    >>> folder = Path('/path/to/price/data')
+    >>> start = datetime(2020, 1, 1)
+    >>> end = datetime(2023, 12, 31)
+    >>> df = load_and_filter_price_data(folder, start, end)
+    """
+
+    required_years = list(range(start_date.year, end_date.year + 1))
+    
+    dataframes = []
+    
+    for year in required_years:
+        price_file = price_folder / f'price_paid_{year}.parquet'
+        
+        if price_file.exists():
+            print(f"Loading {price_file.name}")
+            df = pd.read_parquet(price_file)
+            
+            # Ensure date column exists and is datetime
+            if 'date_of_transfer' in df.columns:
+                df['date_of_transfer'] = pd.to_datetime(df['date_of_transfer'])
+                
+                # Filter by date range
+                mask = (df['date_of_transfer'] >= start_date) & (df['date_of_transfer'] <= end_date)
+                df_filtered = df[mask]
+                
+                if not df_filtered.empty:
+                    dataframes.append(df_filtered)
+            else:
+                print(f"Warning: 'date_of_transfer' column not found in {price_file.name}")
+        else:
+            print(f"File not found: {price_file.name}")
+    
+    if dataframes:
+        return pd.concat(dataframes, ignore_index=True)
+    else:
+        return pd.DataFrame()
+
+
+
+def calculate_average_prices(df):
+    """Calculate average prices by msoa11cd"""
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Filter data according to your criteria
+    filtered_df = df.loc[
+        df['property_type'].isin(['D', 'S', 'F', 'T']) & 
+        (df['ppd_category_type'] == 'A'),
+        ['msoa11cd', 'price']
+    ]
+    
+    if filtered_df.empty:
+        return pd.DataFrame()
+    
+    # Group by msoa11cd and calculate mean and median
+    average_prices = filtered_df.groupby('msoa11cd')['price'].agg(['mean', 'median'])
+    
+    # Flatten column names
+    average_prices.columns = ['price_mean', 'price_median']
+    average_prices = average_prices.reset_index()
+    
+    return average_prices
