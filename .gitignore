@@ -1,12 +1,21 @@
-config.py
+#config.py
 data/
 humanloop_clean/
 humanloop_1_2/.humanloop/
 humanloop_test/.humanloop/
 __pycache__
 .ipynb_checkpoints
-
+.venv
+.env
+uv.lock
+figures/
 *.db
 
 *.log
+.config
 malcom_loop.sh
+
+
+models/
+temp.ipynb
+enhance_ocod.egg-info

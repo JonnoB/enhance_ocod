@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "enhance-ocod"
+version = "0.1.0"
+authors = [
+    {name = "Jonathan Bourne"},
+]
+description = "A package for enhancing and processing OCOD (Overseas companies that own property in England and Wales ) dataset"
+readme = "README.md"
+requires-python = ">=3.6"
+dependencies = [
+    "pandas",
+    "numpy", 
+    "transformers",
+    "accelerate",
+    "seqeval",
+    "datasets",
+    "scikit-learn",  # for sklearn.metrics
+    "torch",
+    "tqdm",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = {text = "MIT"}
+
+[project.urls]
+"Homepage" = "https://github.com/JonnoB/enhance_ocod"
+"Bug Tracker" = "https://github.com/JonnoB/enhance_ocod/issues"
