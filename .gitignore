@@ -1,8 +1,5 @@
 #config.py
 data/
-humanloop_clean/
-humanloop_1_2/.humanloop/
-humanloop_test/.humanloop/
 __pycache__
 .ipynb_checkpoints
 .venv
