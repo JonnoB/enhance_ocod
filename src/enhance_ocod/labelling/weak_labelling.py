@@ -116,6 +116,8 @@ def process_dataframe_batch(df: pd.DataFrame,
         end_idx = min(start_idx + batch_size, len(df))
         batch_df = df.iloc[start_idx:end_idx].copy()
 
+        batch_df = create_flat_tag(batch_df, text_column)
+        batch_df = create_commercial_park_tag(batch_df, text_column)
         batch_df['text'] = batch_df[text_column].fillna('')
         
         batch_results = []
@@ -269,15 +271,60 @@ def get_overlap_stats(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 def create_flat_tag(df, text_column='property_address'):
-    """Create binary flat_tag based on presence of flat/apartment indicators"""
+    
+    """
+        Create binary flat_tag column based on presence of flat/apartment indicators.
+        
+        This function adds a new boolean column 'flat_tag' to the DataFrame that 
+        identifies properties containing flat or apartment-related keywords. This 
+        tag is used to ensure proper application of regex labeling rules.
+        
+        Args:
+            df (pandas.DataFrame): The input DataFrame containing property data.
+            text_column (str, optional): The column name containing property address 
+                text to search. Defaults to 'property_address'.
+        
+        Returns:
+            pandas.DataFrame: The input DataFrame with an additional 'flat_tag' 
+                boolean column. True indicates the presence of flat/apartment 
+                indicators, False otherwise.
+        
+        Examples:
+            >>> df = pd.DataFrame({'property_address': ['flat 4, canterbury road ', '4, canterbury road']})
+            >>> result = create_flat_tag(df)
+            >>> result['flat_tag'].tolist()
+            [True, False]
+    """
+
     df['flat_tag'] = df[text_column].str.contains(
         r'\b(apartment|flat|penthouse|unit)\b',
         case=False, na=False, regex=True
-    )
+        )
     return df
 
 def create_commercial_park_tag(df, text_column='property_address'):
-    """Create binary commercial_park_tag based on presence of commercial park indicators"""
+    """Create binary commercial_park_tag column based on commercial park indicators.
+    
+    This function adds a new boolean column 'commercial_park_tag' to the DataFrame 
+    that identifies properties containing commercial park-related keywords. This 
+    tag is used to ensure proper application of regex labeling rules.
+    
+    Args:
+        df (pandas.DataFrame): The input DataFrame containing property data.
+        text_column (str, optional): The column name containing property address 
+            text to search. Defaults to 'property_address'.
+    
+    Returns:
+        pandas.DataFrame: The input DataFrame with an additional 
+            'commercial_park_tag' boolean column. True indicates the presence 
+            of commercial park indicators, False otherwise.
+    
+    Examples:
+        >>> df = pd.DataFrame({'property_address': ['unit 4 chelmsford business park', '4 chelmsford road']})
+        >>> result = create_commercial_park_tag(df)
+        >>> result['commercial_park_tag'].tolist()
+        [True, False]
+    """
     df['commercial_park_tag'] = df[text_column].str.contains(
             r'\b(business\s+park|industrial\s+park|commercial\s+park|office\s+park|'
             r'technology\s+park|science\s+park|enterprise\s+park|trading\s+estate|'

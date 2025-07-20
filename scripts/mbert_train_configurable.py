@@ -170,7 +170,7 @@ def main():
         model_path=final_model_path,
         data_path=val_data_path,
         output_dir=performance_folder,
-        dataset_name="test",
+        dataset_name=f"test_{args.model_suffix}",  # Changed this line
         max_length=args.max_length
     )
     
