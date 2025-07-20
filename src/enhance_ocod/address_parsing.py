@@ -5,7 +5,62 @@ import numpy as np
 import time
 import zipfile
 from typing import Optional, List, Callable
+import io
 #This  module is supposed to contain all the relevant functions for parsing the LabeledS json file 
+
+def load_postcode_district_lookup(file_path, target_post_area=None):
+    """
+    Load the ONS postcode district lookup table from a ZIP file.
+
+    Loads the ONSPD (Office for National Statistics Postcode Directory) and reduces 
+    it to relevant columns to save memory. Filters for English and Welsh postcodes.
+
+    Args:
+        file_path (str): Path to the ZIP file containing the ONSPD data.
+        target_post_area (str, optional): Specific CSV file within the ZIP to load. 
+            If None, automatically finds the appropriate file.
+
+    Returns:
+        pd.DataFrame: Processed postcode district lookup table with selected columns.
+    """
+    with zipfile.ZipFile(file_path) as zf:
+        # If no target file specified, find it automatically
+        if target_post_area is None:
+            target_post_area = [
+                i for i in zf.namelist() 
+                if re.search(r'^Data/ONSPD.+csv$', i)
+            ][0]
+
+        with io.TextIOWrapper(zf.open(target_post_area), encoding='latin-1') as f:
+            postcode_district_lookup = pd.read_csv(f)[['pcds', 'oslaua', 'oa11', 'lsoa11', 'msoa11', 'ctry']]
+            
+            # Filter for English and Welsh postcodes
+            postcode_district_lookup = postcode_district_lookup[
+                (postcode_district_lookup['ctry'] == 'E92000001') | 
+                (postcode_district_lookup['ctry'] == 'W92000004')
+            ]
+            
+            # Rename columns
+            postcode_district_lookup.rename(columns={
+                'pcds': 'postcode2',
+                'oslaua': 'lad11cd',
+                'oa11': 'oa11cd',
+                'lsoa11': 'lsoa11cd',
+                'msoa11': 'msoa11cd'
+            }, inplace=True)
+            
+            # Remove spaces from postcodes
+            postcode_district_lookup['postcode2'] = (
+                postcode_district_lookup['postcode2']
+                .str.lower()
+                .str.replace(r"\s", r"", regex=True)
+            )
+            
+            # Drop country column
+            postcode_district_lookup.drop('ctry', axis=1, inplace=True)
+    
+    return postcode_district_lookup
+
 
 ##
 ##
