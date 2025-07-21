@@ -27,37 +27,51 @@ from transformers import (
     AutoModelForTokenClassification,
     TrainingArguments,
     Trainer,
-    DataCollatorForTokenClassification
+    DataCollatorForTokenClassification,
 )
 from pathlib import Path
-from enhance_ocod.training import NERDataProcessor, create_label_list, evaluate_model_performance
+from enhance_ocod.training import (
+    NERDataProcessor,
+    create_label_list,
+    evaluate_model_performance,
+)
 import torch
 
 # Add these imports at the top of your file
-import pandas as pd
-import numpy as np
-from sklearn.metrics import classification_report, precision_recall_fscore_support
-from sklearn.metrics import confusion_matrix
-from seqeval.metrics.sequence_labeling import get_entities
 
 
-
-torch.set_float32_matmul_precision('medium')
+torch.set_float32_matmul_precision("medium")
 
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
 model_name = "answerdotai/ModernBERT-base"
 
-train_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / 'ner_ready' /"ground_truth_dev_set_labels.json") 
-val_data_path = str(SCRIPT_DIR / ".." / "data" / "training_data" / 'ner_ready' /"ground_truth_test_set_labels.json")
+train_data_path = str(
+    SCRIPT_DIR
+    / ".."
+    / "data"
+    / "training_data"
+    / "ner_ready"
+    / "ground_truth_dev_set_labels.json"
+)
+val_data_path = str(
+    SCRIPT_DIR
+    / ".."
+    / "data"
+    / "training_data"
+    / "ner_ready"
+    / "ground_truth_test_set_labels.json"
+)
 
 # After training is complete, save the final model
-final_model_path = "/teamspace/studios/this_studio/enhance_ocod/models/address_parser_dev/final_model"
+final_model_path = (
+    "/teamspace/studios/this_studio/enhance_ocod/models/address_parser_dev/final_model"
+)
 
 num_train_epochs = 6
 batch_size = 16
 learning_rate = 5e-5
-max_length  = 128
+max_length = 128
 output_dir = str(SCRIPT_DIR / ".." / "models" / "address_parser_dev")
 entity_types = [
     "building_name",
@@ -67,7 +81,7 @@ entity_types = [
     "unit_id",
     "unit_type",
     "city",
-    "postcode"
+    "postcode",
 ]
 
 # Create label list
@@ -92,7 +106,6 @@ if val_dataset:
     print(f"Validation examples: {len(val_dataset)}")
 
 
-
 # Load model
 print(f"Loading model: {model_name}")
 model = AutoModelForTokenClassification.from_pretrained(
@@ -100,7 +113,7 @@ model = AutoModelForTokenClassification.from_pretrained(
     num_labels=len(label_list),
     id2label=processor.id2label,
     label2id=processor.label2id,
-    ignore_mismatched_sizes=True  # In case of different vocab size
+    ignore_mismatched_sizes=True,  # In case of different vocab size
 )
 
 # Data collator
@@ -122,9 +135,9 @@ training_args = TrainingArguments(
     logging_steps=50,
     eval_strategy="epoch" if val_dataset else "no",
     eval_steps=50 if val_dataset else None,
-    save_strategy="epoch", 
-    save_steps=1,  
-    save_total_limit=1, 
+    save_strategy="epoch",
+    save_steps=1,
+    save_total_limit=1,
     load_best_model_at_end=True if val_dataset else False,
     metric_for_best_model="f1" if val_dataset else None,
     greater_is_better=True,
@@ -155,12 +168,12 @@ print(f"Final model saved to: {final_model_path}")
 
 
 overall_df, class_df = evaluate_model_performance(
-        model_path=final_model_path,
-        data_path=val_data_path,
-        output_dir=final_model_path,
-        dataset_name="test",
-        max_length=max_length
-    )
+    model_path=final_model_path,
+    data_path=val_data_path,
+    output_dir=final_model_path,
+    dataset_name="test",
+    max_length=max_length,
+)
 
 print(f"Performance metrics saved to: {final_model_path}")
 print("Training and evaluation complete!")

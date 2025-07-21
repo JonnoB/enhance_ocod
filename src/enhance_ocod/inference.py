@@ -78,45 +78,51 @@ Output Format:
 
 # ==================== SHARED UTILITIES ====================
 
-def format_result(row_index: int, address: str, datapoint_id, predictions: List[Dict]) -> Dict:
+
+def format_result(
+    row_index: int, address: str, datapoint_id, predictions: List[Dict]
+) -> Dict:
     """
     Convert HuggingFace NER predictions to standardized result format.
-    
+
     Args:
         row_index: Index of the address in the original dataset
         address: Original address string
         datapoint_id: Unique identifier for this address
         predictions: List of HuggingFace NER predictions
-    
+
     Returns:
         Standardized result dictionary
     """
     # Convert HF format to our format
     entities = []
     for pred in predictions:
-        entities.append({
-            "type": pred["entity_group"],
-            "text": pred["word"],
-            "start": pred["start"],
-            "end": pred["end"],
-            "confidence": pred["score"]
-        })
-    
+        entities.append(
+            {
+                "type": pred["entity_group"],
+                "text": pred["word"],
+                "start": pred["start"],
+                "end": pred["end"],
+                "confidence": pred["score"],
+            }
+        )
+
     # Group by type
     parsed_components = {}
     for entity in entities:
-        entity_type = entity['type']
+        entity_type = entity["type"]
         if entity_type not in parsed_components:
             parsed_components[entity_type] = []
-        parsed_components[entity_type].append(entity['text'])
-    
+        parsed_components[entity_type].append(entity["text"])
+
     return {
         "row_index": row_index,
         "datapoint_id": datapoint_id,
         "original_address": address,
         "entities": entities,
-        "parsed_components": parsed_components
+        "parsed_components": parsed_components,
     }
+
 
 def _create_pipeline(model_path: str, device: int, batch_size: int):
     """Create HuggingFace pipeline with standard configuration."""
@@ -126,8 +132,9 @@ def _create_pipeline(model_path: str, device: int, batch_size: int):
         device=device,
         batch_size=batch_size,
         aggregation_strategy="simple",
-        torch_dtype=torch.float16
+        torch_dtype=torch.float16,
     )
+
 
 def _prepare_data(df: pd.DataFrame, target_column: str) -> Tuple[List[str], List]:
     """Extract and prepare address data from DataFrame."""
@@ -135,10 +142,11 @@ def _prepare_data(df: pd.DataFrame, target_column: str) -> Tuple[List[str], List
     datapoint_ids = df.get("datapoint_id", df.index).tolist()
     return addresses, datapoint_ids
 
+
 def _calculate_summary(addresses: List[str], results: List[Dict], **kwargs) -> Dict:
     """Calculate processing summary statistics."""
     successful_parses = sum(1 for r in results if r and r["entities"])
-    
+
     summary = {
         "total_addresses": len(addresses),
         "successful_parses": successful_parses,
@@ -148,7 +156,9 @@ def _calculate_summary(addresses: List[str], results: List[Dict], **kwargs) -> D
     summary.update(kwargs)  # Add any additional metrics
     return summary
 
+
 # ==================== MAIN FUNCTIONS ====================
+
 
 def parse_addresses_basic(
     df: pd.DataFrame,
@@ -156,21 +166,21 @@ def parse_addresses_basic(
     target_column: str = "address",
     batch_size: int = 512,
     device: Optional[int] = None,
-    show_progress: bool = True
+    show_progress: bool = True,
 ) -> Dict:
     """
     Parse addresses using single-stage HuggingFace pipeline processing.
-    
+
     This is the simple, straightforward approach that processes all addresses
     with the same batch size. Good for:
     - Debugging and testing
     - Small datasets
     - When addresses are relatively uniform in length
     - Quick prototyping
-    
+
     For production use with mixed-length addresses, consider parse_addresses_pipeline()
     which uses optimized two-stage processing.
-    
+
     Args:
         df: DataFrame containing addresses to parse
         model_path: Path to HuggingFace model (local or hub)
@@ -178,42 +188,42 @@ def parse_addresses_basic(
         batch_size: Fixed batch size for all processing
         device: GPU device (-1 for CPU, 0+ for GPU). Auto-detected if None
         show_progress: Whether to show progress bar
-    
+
     Returns:
         Dict with 'summary' and 'results' keys containing parsing results
     """
     # Auto-detect device
     if device is None:
         device = 0 if torch.cuda.is_available() else -1
-    
+
     # Prepare data
     addresses, datapoint_ids = _prepare_data(df, target_column)
-    
-    print(f"Loading model and processing {len(addresses)} addresses with batch_size={batch_size}")
-    
+
+    print(
+        f"Loading model and processing {len(addresses)} addresses with batch_size={batch_size}"
+    )
+
     # Create pipeline
     nlp = _create_pipeline(model_path, device, batch_size)
-    
+
     # Process all addresses
     all_predictions = nlp(addresses)
-    
+
     # Convert results
     results = []
     iterator = zip(addresses, all_predictions, datapoint_ids)
     if show_progress:
         iterator = tqdm(iterator, total=len(addresses), desc="Converting results")
-    
+
     for i, (address, predictions, datapoint_id) in enumerate(iterator):
         result = format_result(i, address, datapoint_id, predictions)
         results.append(result)
-    
+
     # Calculate summary
     summary = _calculate_summary(addresses, results, batch_size_used=batch_size)
-    
-    return {
-        "summary": summary,
-        "results": results
-    }
+
+    return {"summary": summary, "results": results}
+
 
 def parse_addresses_pipeline(
     df: pd.DataFrame,
@@ -222,21 +232,21 @@ def parse_addresses_pipeline(
     short_batch_size: int = 2048,
     long_batch_size: int = 32,
     token_threshold: int = 128,
-    device: Optional[int] = None
+    device: Optional[int] = None,
 ) -> Dict:
     """
     Parse addresses using optimized two-stage processing for mixed-length data.
-    
+
     This approach analyzes address lengths and processes them in two optimized stages:
     - Short addresses (≤ token_threshold): Large batches for high throughput
     - Long addresses (> token_threshold): Small batches to avoid memory issues
-    
+
     Recommended for:
     - Production environments
     - Large datasets with varying address lengths
     - Memory-constrained environments
     - When processing speed is important
-    
+
     Args:
         df: DataFrame containing addresses to parse
         model_path: Path to HuggingFace model (local or hub)
@@ -245,10 +255,10 @@ def parse_addresses_pipeline(
         long_batch_size: Batch size for long addresses (smaller = less memory)
         token_threshold: Token count threshold to split short/long addresses
         device: GPU device (-1 for CPU, 0+ for GPU). Auto-detected if None
-    
+
     Returns:
         Dict with 'summary' and 'results' keys containing parsing results
-        
+
     Example:
         >>> results = parse_addresses_pipeline(
         ...     df=address_df,
@@ -259,69 +269,69 @@ def parse_addresses_pipeline(
         ... )
     """
     device = device or (0 if torch.cuda.is_available() else -1)
-    
+
     # Prepare data
     addresses, datapoint_ids = _prepare_data(df, target_column)
-    
+
     # Load tokenizer and split data by length
     tokenizer = AutoTokenizer.from_pretrained(model_path)
-    short_data, long_data = _split_by_length(addresses, datapoint_ids, tokenizer, token_threshold)
-    
+    short_data, long_data = _split_by_length(
+        addresses, datapoint_ids, tokenizer, token_threshold
+    )
+
     print(f"Short addresses: {len(short_data):,} | Long addresses: {len(long_data):,}")
-    
+
     # Process each stage
     results = [None] * len(addresses)
     _process_stage(short_data, "short", short_batch_size, model_path, device, results)
     _process_stage(long_data, "long", long_batch_size, model_path, device, results)
-    
+
     # Calculate summary with two-stage metrics
     summary = _calculate_summary(
-        addresses, results,
+        addresses,
+        results,
         short_addresses=len(short_data),
         long_addresses=len(long_data),
         short_batch_size=short_batch_size,
         long_batch_size=long_batch_size,
-        token_threshold=token_threshold
+        token_threshold=token_threshold,
     )
-    
-    return {
-        "summary": summary,
-        "results": results
-    }
+
+    return {"summary": summary, "results": results}
+
 
 # ==================== TWO-STAGE PROCESSING HELPERS ====================
 
+
 def _split_by_length(
-    addresses: List[str], 
-    datapoint_ids: List, 
-    tokenizer, 
-    token_threshold: int
+    addresses: List[str], datapoint_ids: List, tokenizer, token_threshold: int
 ) -> Tuple[List[Tuple], List[Tuple]]:
     """Split addresses into short and long categories based on token count."""
     short_data, long_data = [], []
-    
+
     for i, addr in enumerate(tqdm(addresses, desc="Analyzing address lengths")):
         token_count = len(tokenizer.tokenize(addr))
         data_tuple = (i, addr, datapoint_ids[i])
-        
+
         if token_count <= token_threshold:
             short_data.append(data_tuple)
         else:
             long_data.append(data_tuple)
-    
+
     return short_data, long_data
 
+
 def _process_stage(
-    stage_data: List[Tuple], 
-    stage_name: str, 
-    batch_size: int, 
-    model_path: str, 
-    device: int, 
-    results: List
+    stage_data: List[Tuple],
+    stage_name: str,
+    batch_size: int,
+    model_path: str,
+    device: int,
+    results: List,
 ) -> None:
     """
     Process one stage (short or long addresses) with optimized batch size.
-    
+
     Args:
         stage_data: List of (index, address, datapoint_id) tuples
         stage_name: "short" or "long" for logging
@@ -333,49 +343,65 @@ def _process_stage(
     if not stage_data:
         print(f"No {stage_name} addresses to process")
         return
-    
-    print(f"Processing {len(stage_data):,} {stage_name} addresses (batch_size={batch_size})...")
-    
+
+    print(
+        f"Processing {len(stage_data):,} {stage_name} addresses (batch_size={batch_size})..."
+    )
+
     # Create pipeline for this stage
     pipeline_instance = _create_pipeline(model_path, device, batch_size)
-    
+
     # Extract data for processing
     indices, addresses_list, datapoint_ids = zip(*stage_data)
-    
+
     # Process all addresses in this stage
     predictions = pipeline_instance(list(addresses_list))
-    
+
     # Store results in the correct positions
-    for idx, addr, datapoint_id, preds in zip(indices, addresses_list, datapoint_ids, predictions):
+    for idx, addr, datapoint_id, preds in zip(
+        indices, addresses_list, datapoint_ids, predictions
+    ):
         results[idx] = format_result(idx, addr, datapoint_id, preds)
-    
+
     print(f"✓ Completed {len(stage_data):,} {stage_name} addresses")
 
+
 # ==================== RESULT PROCESSING ====================
+
 
 def convert_to_entity_dataframe(results: Dict, batch_size: int = 50000) -> pd.DataFrame:
     """
     Convert parsing results to structured entity DataFrame.
-    
+
     Works with results from both parse_addresses_basic() and parse_addresses_pipeline().
     Creates a long-format DataFrame where each row represents one extracted entity,
     suitable for further analysis or database storage.
-    
+
     Args:
         results: Output from either parsing function
         batch_size: Batch size for progress reporting during processing
-    
+
     Returns:
         DataFrame with columns: datapoint_id, label, start, end, text, label_text, label_id_count
     """
     total_entities = sum(len(result["entities"]) for result in results["results"])
-    
+
     if total_entities == 0:
         print("Warning: No entities found in results!")
-        return pd.DataFrame(columns=['datapoint_id', 'label', 'start', 'end', 'text', 'label_text', 'label_id_count'])
-    
-    print(f'Processing {total_entities:,} entities into DataFrame...')
-    
+        return pd.DataFrame(
+            columns=[
+                "datapoint_id",
+                "label",
+                "start",
+                "end",
+                "text",
+                "label_text",
+                "label_id_count",
+            ]
+        )
+
+    print(f"Processing {total_entities:,} entities into DataFrame...")
+
     # Pre-allocate arrays for efficiency
     datapoint_ids = []
     labels = []
@@ -383,43 +409,47 @@ def convert_to_entity_dataframe(results: Dict, batch_size: int = 50000) -> pd.Da
     ends = []
     texts = []
     label_texts = []
-    
+
     processed = 0
-    
+
     for result in results["results"]:
         datapoint_id = result.get("datapoint_id", result.get("row_index", "unknown"))
         original_address = result["original_address"]
         entities = result["entities"]
-        
+
         entity_count = len(entities)
         if entity_count > 0:
             datapoint_ids.extend([datapoint_id] * entity_count)
-            labels.extend([entity['type'] for entity in entities])
-            starts.extend([entity['start'] for entity in entities])
-            ends.extend([entity['end'] for entity in entities])
+            labels.extend([entity["type"] for entity in entities])
+            starts.extend([entity["start"] for entity in entities])
+            ends.extend([entity["end"] for entity in entities])
             texts.extend([original_address] * entity_count)
-            label_texts.extend([entity['text'] for entity in entities])
-            
+            label_texts.extend([entity["text"] for entity in entities])
+
             processed += entity_count
             if processed % batch_size == 0:
-                print(f'Processed {processed:,}/{total_entities:,} entities')
-    
-    all_entities = pd.DataFrame({
-        'datapoint_id': datapoint_ids,
-        'label': labels,
-        'start': starts,
-        'end': ends,
-        'text': texts,
-        'label_text': label_texts
-    })
-    
-    print('Computing label counts...')
+                print(f"Processed {processed:,}/{total_entities:,} entities")
+
+    all_entities = pd.DataFrame(
+        {
+            "datapoint_id": datapoint_ids,
+            "label": labels,
+            "start": starts,
+            "end": ends,
+            "text": texts,
+            "label_text": label_texts,
+        }
+    )
+
+    print("Computing label counts...")
     # Add counter for multiple entities of same type within same address
-    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label'], sort=False).cumcount()
-    
-    print('✓ Named Entity Recognition processing complete')
-    print(f'Total entities extracted: {len(all_entities):,}')
-    
+    all_entities["label_id_count"] = all_entities.groupby(
+        ["datapoint_id", "label"], sort=False
+    ).cumcount()
+
+    print("✓ Named Entity Recognition processing complete")
+    print(f"Total entities extracted: {len(all_entities):,}")
+
     return all_entities
 
 
@@ -444,50 +474,55 @@ def test_single_address(address="36 - 49, chapel street, London, se45 6pq"):
         None. Prints output to the console.
     """
     # Initialize your parser
-    model_path = "models/address_parser_dev/final_model"  # Replace with your actual model path
-    
+    model_path = (
+        "models/address_parser_dev/final_model"  # Replace with your actual model path
+    )
+
     try:
         print("Initializing parser...")
         parser = AddressParserInference(
             model_path=model_path,
             max_length=512,
             stride=50,
-            use_fp16=True  # Set to False for debugging to avoid GPU issues
+            use_fp16=True,  # Set to False for debugging to avoid GPU issues
         )
         print("✓ Parser initialized successfully")
-        
+
         # Test address
         test_address = address
         print(f"\nTesting address: '{test_address}'")
-        
+
         # Make prediction
         result = parser.predict_single_address(test_address, row_index=0)
-        
+
         # Print results
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("RESULTS:")
-        print("="*50)
-        
+        print("=" * 50)
+
         if "error" in result:
             print(f"❌ ERROR: {result['error']}")
         else:
             print(f"✓ Original address: {result['original_address']}")
             print(f"✓ Number of entities found: {len(result['entities'])}")
-            
-            if result['entities']:
+
+            if result["entities"]:
                 print("\nEntities found:")
-                for i, entity in enumerate(result['entities']):
-                    print(f"  {i+1}. {entity['type']}: '{entity['text']}' (confidence: {entity['confidence']:.3f})")
-                
+                for i, entity in enumerate(result["entities"]):
+                    print(
+                        f"  {i + 1}. {entity['type']}: '{entity['text']}' (confidence: {entity['confidence']:.3f})"
+                    )
+
                 print("\nParsed components:")
-                for key, value in result['parsed_components'].items():
+                for key, value in result["parsed_components"].items():
                     print(f"  {key}: {value}")
             else:
                 print("⚠️  No entities found")
-        
-        print("="*50)
-        
+
+        print("=" * 50)
+
     except Exception as e:
         print(f"❌ Failed to initialize or run parser: {str(e)}")
         import traceback
+
         traceback.print_exc()
