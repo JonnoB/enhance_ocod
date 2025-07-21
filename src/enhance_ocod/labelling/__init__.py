@@ -18,5 +18,4 @@ Example:
     print(results[0]['spans'])  # [{'text': 'Main Street', 'start': 4, 'end': 15, 'label': 'ROAD'}, ...]
     ```
 
-This submodule is designed for extensibility and can be adapted for new entity types or domains by adding new regex patterns or labelling functions.
 """
