@@ -1,7 +1,7 @@
 """
 OCOD Dataset Enhancement and Processing Pipeline - CSV Version
 
-This script processes a single CSV file through the same comprehensive enhancement pipeline 
+This script processes a single CSV file through the same enhancement pipeline 
 that includes address parsing, geolocation, and property classification.
 
 The CSV file should contain the same columns as the OCOD dataset:

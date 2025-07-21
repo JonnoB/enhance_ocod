@@ -175,7 +175,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         file_path=str(price_paid_path), 
         processed_dir=processed_price_paid_dir,
         postcode_district_lookup=postcode_district_lookup, 
-        years_needed=[2017, 2018, 2019]
+        years_needed=[2024,2023,2022]
     )
 
     ocod_data = add_missing_lads_ocod(ocod_data, price_paid_df)

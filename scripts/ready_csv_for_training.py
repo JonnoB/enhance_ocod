@@ -47,7 +47,7 @@ for filename in files_to_process:
     with open(output_path_preproc, 'w') as f:
         json.dump(dataframe_to_ner_format(df_preproc), f, indent=2)
     
-    # Add additional columns
+    # Add additional columns this is just filler so the code runs it does not impact the outcome.
     df['title_number'] = df['datapoint_id']
     df['tenure'] = 'freehold'
     df['district'] = 'westminster'

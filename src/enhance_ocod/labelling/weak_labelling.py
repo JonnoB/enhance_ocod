@@ -223,6 +223,111 @@ def remove_overlapping_spans(results: List[Dict[str, Any]]) -> None:
         kept_spans.sort(key=lambda x: x['start'])
         result['spans'] = kept_spans
 
+
+def convert_weakly_labelled_list_to_dataframe(results: List[Dict], batch_size: int = 50000) -> pd.DataFrame:
+    """
+    Convert parsing results to structured entity DataFrame.
+
+    Works with data produced by the weak labelling function `process_dataframe_batch`.
+    This function exists due to a structural mismatch with the `convert_to_entity_dataframe` function from the inference module. This should be resolved in future versions.
+    Creates a long-format DataFrame where each row represents one extracted entity,
+    suitable for further analysis or database storage.
+
+    Args:
+        results: List of dictionaries with 'text' and 'spans' fields
+        batch_size: Batch size for progress reporting during processing
+
+    Returns:
+        DataFrame with columns: datapoint_id, label, start, end, text, label_text, label_id_count
+
+    Example:
+    ```python
+    import pandas as pd
+    
+    # Create example DataFrame with property addresses
+    df = pd.DataFrame({
+        'property_address': [
+            'Westleigh Lodge Care Home, Nel Pan Lane, Leigh (WN7 5JT)',
+            'Flat 1, 1a Canal Street, Manchester (M1 3HE)',
+            'Flat 201, 1 Regent Road, Manchester (M3 4AY)',
+            '15 Oak Avenue, Birmingham (B12 9QR)'
+        ]
+    })
+
+    # Process DataFrame with property addresses
+    processed_list = process_dataframe_batch(df, 
+                                batch_size=5000,
+                                text_column='property_address')
+                                
+    # Remove any overlapping spans
+    remove_overlapping_spans(processed_list)
+
+    # Convert to standard DataFrame format
+    processed_list = convert_weak_labels_to_standard_format(processed_list)
+
+
+    processed_df = convert_weakly_labelled_list_to_dataframe(processed_list)
+
+    print(processed_df)
+    ```
+    
+    Note: Input DataFrame (df) must contain a 'property_address' column.
+    """
+    total_entities = sum(len(result["spans"]) for result in results)
+    
+    if total_entities == 0:
+        print("Warning: No entities found in results!")
+        return pd.DataFrame(columns=['datapoint_id', 'label', 'start', 'end', 'text', 'label_text', 'label_id_count'])
+    
+    print(f'Processing {total_entities:,} entities into DataFrame...')
+    
+    # Pre-allocate arrays for efficiency
+    datapoint_ids = []
+    labels = []
+    starts = []
+    ends = []
+    texts = []
+    label_texts = []
+    
+    processed = 0
+    
+    for idx, result in enumerate(results):
+        datapoint_id = idx  # Using list index as datapoint_id
+        original_address = result["text"]
+        spans = result["spans"]
+        
+        entity_count = len(spans)
+        if entity_count > 0:
+            datapoint_ids.extend([datapoint_id] * entity_count)
+            labels.extend([span['label'] for span in spans])
+            starts.extend([span['start'] for span in spans])
+            ends.extend([span['end'] for span in spans])
+            texts.extend([original_address] * entity_count)
+            # Extract text using start/end positions
+            label_texts.extend([original_address[span['start']:span['end']] for span in spans])
+            
+            processed += entity_count
+            if processed % batch_size == 0:
+                print(f'Processed {processed:,}/{total_entities:,} entities')
+    
+    all_entities = pd.DataFrame({
+        'datapoint_id': datapoint_ids,
+        'label': labels,
+        'start': starts,
+        'end': ends,
+        'text': texts,
+        'label_text': label_texts
+    })
+    
+    print('Computing label counts...')
+    # Add counter for multiple entities of same type within same address
+    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label'], sort=False).cumcount()
+    
+    print('✓ Named Entity Recognition processing complete')
+    print(f'Total entities extracted: {len(all_entities):,}')
+    
+    return all_entities
+
 def get_overlap_stats(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Get statistics about overlaps before removal (for debugging)"""
     
@@ -297,7 +402,7 @@ def create_flat_tag(df, text_column='property_address'):
     """
 
     df['flat_tag'] = df[text_column].str.contains(
-        r'\b(apartment|flat|penthouse|unit)\b',
+        r'\b(?:apartment|flat|penthouse|unit)s?\b',
         case=False, na=False, regex=True
         )
     return df
@@ -326,10 +431,10 @@ def create_commercial_park_tag(df, text_column='property_address'):
         [True, False]
     """
     df['commercial_park_tag'] = df[text_column].str.contains(
-            r'\b(business\s+park|industrial\s+park|commercial\s+park|office\s+park|'
+            r'\b(?:business\s+park|industrial\s+park|commercial\s+park|office\s+park|'
             r'technology\s+park|science\s+park|enterprise\s+park|trading\s+estate|'
             r'business\s+estate|industrial\s+estate|retail\s+park|tech\s+park|'
-            r'innovation\s+park|corporate\s+park)\b',
+            r'innovation\s+park|corporate\s+park)s?\b',
             case=False, na=False, regex=True
         )
     return df
