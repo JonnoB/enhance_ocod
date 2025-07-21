@@ -223,7 +223,6 @@ def remove_overlapping_spans(results: List[Dict[str, Any]]) -> None:
         kept_spans.sort(key=lambda x: x['start'])
         result['spans'] = kept_spans
 
-
 def convert_weakly_labelled_list_to_dataframe(results: List[Dict], batch_size: int = 50000) -> pd.DataFrame:
     """
     Convert parsing results to structured entity DataFrame.
@@ -238,7 +237,7 @@ def convert_weakly_labelled_list_to_dataframe(results: List[Dict], batch_size: i
         batch_size: Batch size for progress reporting during processing
 
     Returns:
-        DataFrame with columns: datapoint_id, label, start, end, text, label_text, label_id_count
+        DataFrame with columns: datapoint_id, start, end, text, label, property_address
 
     Example:
     ```python
@@ -265,7 +264,6 @@ def convert_weakly_labelled_list_to_dataframe(results: List[Dict], batch_size: i
     # Convert to standard DataFrame format
     processed_list = convert_weak_labels_to_standard_format(processed_list)
 
-
     processed_df = convert_weakly_labelled_list_to_dataframe(processed_list)
 
     print(processed_df)
@@ -277,7 +275,7 @@ def convert_weakly_labelled_list_to_dataframe(results: List[Dict], batch_size: i
     
     if total_entities == 0:
         print("Warning: No entities found in results!")
-        return pd.DataFrame(columns=['datapoint_id', 'label', 'start', 'end', 'text', 'label_text', 'label_id_count'])
+        return pd.DataFrame(columns=['datapoint_id', 'start', 'end', 'text', 'label', 'property_address'])
     
     print(f'Processing {total_entities:,} entities into DataFrame...')
     
@@ -287,7 +285,7 @@ def convert_weakly_labelled_list_to_dataframe(results: List[Dict], batch_size: i
     starts = []
     ends = []
     texts = []
-    label_texts = []
+    property_addresses = []
     
     processed = 0
     
@@ -302,26 +300,24 @@ def convert_weakly_labelled_list_to_dataframe(results: List[Dict], batch_size: i
             labels.extend([span['label'] for span in spans])
             starts.extend([span['start'] for span in spans])
             ends.extend([span['end'] for span in spans])
-            texts.extend([original_address] * entity_count)
-            # Extract text using start/end positions
-            label_texts.extend([original_address[span['start']:span['end']] for span in spans])
+            # Extract text using start/end positions (this becomes the 'text' column)
+            texts.extend([original_address[span['start']:span['end']] for span in spans])
+            # Original address becomes 'property_address' column
+            property_addresses.extend([original_address] * entity_count)
             
             processed += entity_count
             if processed % batch_size == 0:
                 print(f'Processed {processed:,}/{total_entities:,} entities')
     
+    # Create DataFrame with desired column order
     all_entities = pd.DataFrame({
         'datapoint_id': datapoint_ids,
-        'label': labels,
         'start': starts,
         'end': ends,
         'text': texts,
-        'label_text': label_texts
+        'label': labels,
+        'property_address': property_addresses
     })
-    
-    print('Computing label counts...')
-    # Add counter for multiple entities of same type within same address
-    all_entities['label_id_count'] = all_entities.groupby(['datapoint_id', 'label'], sort=False).cumcount()
     
     print('✓ Named Entity Recognition processing complete')
     print(f'Total entities extracted: {len(all_entities):,}')

@@ -89,6 +89,14 @@ test_single_address(address="36 - 49, chapel street, London, se45 6pq")
 - **Other scripts:**
   See the `scripts/` directory for additional utilities (e.g., `parse_ocod_history.py`, `model_test.py`, etc.)
 
+### Order to run the scripts in
+
+- `download_hist.py`: Downloads the entire OCOD dataset history and saves by year as zip files. Requires a 'LANDREGISTRY_API' in the .env file.
+- `create_weak_labelling_data.py`: Using the regex rules weakly label the OCOD February 2022 data set
+- `ready_csv_for_training.py`: Create the datasets for training and evaluation of the models out of the development set, weakly labelled set and test set.
+- run_experiments.py: Using the dev and weakly labelled sets, train the ModernBERT models. The script also calls the `mbert_train_configurable.py` script.
+- `price_paide_msoa_averages.py`: Calculates the mean price per MSOA, for a rolling three years. 
+
 ## Pipeline Stages
 1. **NER Labelling** using a pre-trained modernBERT model
 2. **Parsing** and expanding addresses
