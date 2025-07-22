@@ -98,11 +98,16 @@ model_path = (
     SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
 )
 ONSPD_path = SCRIPT_DIR.parent / "data" / "ONSPD_FEB_2025.zip"
-price_paid_path = (
-    SCRIPT_DIR.parent / "data" / "price_paid_data" / "price_paid_complete_may_2025.csv"
-)
+
+price_paid_dir = SCRIPT_DIR.parent / "data" / "price_paid_data"
+price_paid_files = list(price_paid_dir.glob("*"))
+price_paid_path = price_paid_files[0] if price_paid_files else None
+
 processed_price_paid_dir = SCRIPT_DIR.parent / "data" / "processed_price_paid"
-voa_path = SCRIPT_DIR.parent / "data" / "2023_non_domestic_rating_list_entries.zip"
+
+voa_files = list((SCRIPT_DIR.parent / "data" / "voa").glob("*"))
+voa_path = voa_files[0] if voa_files else None
+
 output_dir.mkdir(parents=True, exist_ok=True)
 
 parsed_results_dir = SCRIPT_DIR.parent / "data" / "parsed_ocod_dicts"
