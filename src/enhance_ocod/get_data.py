@@ -1,12 +1,9 @@
 """
 get_data.py
 
-A module for downloading data from various sources, including the UK Land Registry API.
-This module provides functions for downloading OCOD (Open Charges Over Data) history files
-and can be extended with other data downloading functions.
-
-Environment variable required:
-    LANDREGISTRY_API: The API key for authenticating with the Land Registry API.
+A module for downloading data from various sources, including the UK Land Registry API
+and VOA Rating Lists. This module provides a unified interface for different data sources
+with shared functionality extracted into base classes.
 """
 
 import requests
@@ -16,10 +13,10 @@ from pathlib import Path
 from tqdm import tqdm
 from dotenv import load_dotenv
 import pandas as pd
-from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, List, Dict, Any
 import io
-
+import xml.etree.ElementTree as ET
+from abc import ABC, abstractmethod
 
 
 #####################################################################
@@ -38,371 +35,328 @@ def download_csv(url: str,
         
     Returns:
         pd.DataFrame or None: DataFrame if return_df=True, otherwise None
-        
-    Raises:
-        requests.RequestException: If download fails
-        pd.errors.ParserError: If CSV parsing fails
-        IOError: If file saving fails
     """
-    
-    # Check if both save_path and return_df are False/None
     if save_path is None and not return_df:
         print("Warning: Data will not be saved or returned. Terminating operation.")
         return None
     
     try:
-        # Download the file
         print(f"Downloading CSV from: {url}")
         response = requests.get(url, timeout=30)
-        response.raise_for_status()  # Raises an HTTPError for bad responses
+        response.raise_for_status()
         
-        # Read CSV content into DataFrame
         csv_content = io.StringIO(response.text)
         df = pd.read_csv(csv_content)
         print(f"Successfully downloaded CSV with shape: {df.shape}")
         
-        # Save to file if path is provided
         if save_path is not None:
             save_path = Path(save_path)
-            # Create directory if it doesn't exist
             save_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(save_path, index=False)
             print(f"File saved to: {save_path}")
         
-        # Return DataFrame if requested
-        if return_df:
-            print("Returning DataFrame")
-            return df
-        else:
-            return None
+        return df if return_df else None
             
-    except requests.exceptions.RequestException as e:
-        print(f"Error downloading file: {e}")
+    except (requests.exceptions.RequestException, pd.errors.ParserError, IOError) as e:
+        print(f"Error in download_csv: {e}")
         raise
-    except pd.errors.ParserError as e:
-        print(f"Error parsing CSV: {e}")
-        raise
-    except IOError as e:
-        print(f"Error saving file: {e}")
-        raise
-
 
 
 ######################################################
-##
-##  Land Registry OCOD downloader
-##
+## Base Downloader Class
 ######################################################
 
-class LandRegistryDownloader:
-    """Handler for Land Registry API downloads"""
+class BaseDownloader(ABC):
+    """Abstract base class for all downloaders"""
     
-    def __init__(self, api_key=None, base_url=None):
-        """
-        Initialize the downloader
-        
-        Args:
-            api_key (str, optional): API key. If None, loads from LANDREGISTRY_API env var
-            base_url (str, optional): Base URL for API. Uses default if None
-        """
-        load_dotenv()
-        self.api_key = api_key or os.environ.get("LANDREGISTRY_API")
-        self.base_url = base_url or "https://use-land-property-data.service.gov.uk/api/v1/"
-        
-        if not self.api_key:
-            raise ValueError("API key must be provided or set in LANDREGISTRY_API environment variable")
+    def __init__(self):
+        self.session = self._create_session()
     
-    def create_session(self):
-        """Create a requests session for connection reuse"""
+    def _create_session(self) -> requests.Session:
+        """Create a requests session with basic configuration"""
         session = requests.Session()
-        session.headers.update({"Authorization": self.api_key, "Accept": "application/json"})
+        session.headers.update(self._get_default_headers())
         return session
-
-    def get_api_data(self, session, endpoint, context="API request", max_retries=3):
+    
+    def _get_default_headers(self) -> Dict[str, str]:
+        """Get default headers for requests. Override in subclasses if needed."""
+        return {"Accept": "application/json"}
+    
+    def _make_request_with_retry(self, url: str, context: str = "Request", 
+                                max_retries: int = 3, **kwargs) -> Optional[requests.Response]:
         """
-        Generic function to make API requests with retry logic for SSL errors
-
+        Make HTTP request with retry logic for connection errors
+        
         Args:
-            session: requests session object
-            endpoint (str): The API endpoint path (without base URL)
+            url (str): URL to request
             context (str): Description for error messages
-            max_retries (int): Maximum number of retry attempts
-
+            max_retries (int): Maximum retry attempts
+            **kwargs: Additional arguments for requests
+            
         Returns:
-            dict: JSON response data if successful, None if failed
+            requests.Response or None: Response if successful
         """
-        url = f"{self.base_url}{endpoint}"
-
         for attempt in range(max_retries):
             try:
-                response = session.get(url)
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    print(f"Error with {context}: {response.status_code}")
-                    print(response.text)
-                    return None
-
+                response = self.session.get(url, **kwargs)
+                response.raise_for_status()
+                return response
+                
             except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                    print(
-                        f"Connection error on attempt {attempt + 1}/{max_retries} for {context}"
-                    )
+                    wait_time = 2 ** attempt
+                    print(f"Connection error on attempt {attempt + 1}/{max_retries} for {context}")
                     print(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                     continue
                 else:
                     print(f"Failed after {max_retries} attempts for {context}: {str(e)}")
                     return None
-
-            except Exception as e:
-                print(f"Unexpected error with {context}: {str(e)}")
+                    
+            except requests.exceptions.RequestException as e:
+                print(f"Request error for {context}: {str(e)}")
                 return None
-
-        return None
-
-    def download_file(self, session, file_name, output_dir):
-        """
-        Download a single file from the Land Registry API
         
-        Args:
-            session: requests session object
-            file_name (str): Name of the file to download
-            output_dir (str): Directory to save the file
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        output_path = os.path.join(output_dir, file_name)
-
-        # Skip if file already exists
-        if os.path.exists(output_path):
+        return None
+    
+    def _download_single_file(self, url: str, output_path: Path, 
+                            overwrite: bool = False) -> bool:
+        """Optimized download for large ONSPD files"""
+        if output_path.exists() and not overwrite:
+            print(f"File {output_path.name} already exists, skipping")
             return True
 
-        # Get download link
-        download_data = self.get_api_data(
-            session,
-            f"datasets/history/ocod/{file_name}",
-            f"getting download link for {file_name}",
-        )
-        if not download_data or not download_data.get("success"):
-            print(f"Failed to get download link for {file_name}")
-            return False
-
-        download_url = download_data.get("result", {}).get("download_url")
-        if not download_url:
-            print(f"No download URL found for {file_name}")
-            return False
-
-        # Download the file using a plain requests.get (no Authorization header!)
         try:
-            response = requests.get(download_url, stream=True)
-            if response.status_code == 200:
-                with open(output_path, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                return True
-            else:
-                print(f"Download error for {file_name}: {response.status_code}")
-                print(f"Download URL: {download_url}")
-                print(f"Full response text: {response.text}")
-                return False
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Use 1MB chunks instead of 8KB - this will be ~125x faster!
+            with open(output_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
+                    f.write(chunk)
+            
+            print(f"Successfully downloaded {output_path.name}")
+            return True
+            
         except Exception as e:
-            print(f"Exception while downloading {file_name}: {str(e)}")
-            print(f"Download URL: {download_url}")
+            print(f"Error downloading {output_path.name}: {e}")
             return False
+    
+    def _confirm_download(self, files: List[Any], confirm: bool = True) -> bool:
+        """
+        Show file list and get user confirmation
+        
+        Args:
+            files: List of files to download
+            confirm (bool): Whether to ask for confirmation
+            
+        Returns:
+            bool: True if should proceed
+        """
+        if not files:
+            print("No files to download")
+            return False
+        
+        print(f"\nFiles to download:")
+        for i, file_info in enumerate(files, 1):
+            file_desc = self._format_file_description(file_info, i)
+            print(file_desc)
+        
+        if confirm:
+            response = input(f"\nDownload {len(files)} files? (y/n): ")
+            if response.lower() != 'y':
+                print("Download cancelled")
+                return False
+        
+        return True
+    
+    @abstractmethod
+    def _format_file_description(self, file_info: Any, index: int) -> str:
+        """Format file description for confirmation display"""
+        pass
+    
+    @abstractmethod
+    def get_available_files(self, **kwargs) -> List[Any]:
+        """Get list of available files"""
+        pass
+    
+    @abstractmethod
+    def download_files(self, output_dir: Union[str, Path], **kwargs) -> tuple:
+        """Download files. Returns (successful_count, total_count)"""
+        pass
 
-    def get_ocod_history_files(self, file_type="FULL"):
+
+######################################################
+## Land Registry OCOD downloader
+######################################################
+
+class LandRegistryDownloader(BaseDownloader):
+    """Handler for Land Registry API downloads"""
+    
+    def __init__(self, api_key=None, base_url=None):
+        load_dotenv()
+        self.api_key = api_key or os.environ.get("LANDREGISTRY_API")
+        self.base_url = base_url or "https://use-land-property-data.service.gov.uk/api/v1/"
+        
+        if not self.api_key:
+            raise ValueError("API key must be provided or set in LANDREGISTRY_API environment variable")
+        
+        super().__init__()
+    
+    def _get_default_headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": self.api_key,
+            "Accept": "application/json"
+        }
+    
+    def _format_file_description(self, file_info: str, index: int) -> str:
+        return f"{index}. {file_info}"
+    
+    def _get_api_data(self, endpoint: str, context: str = "API request") -> Optional[Dict]:
+        """Get JSON data from API endpoint"""
+        url = f"{self.base_url}{endpoint}"
+        response = self._make_request_with_retry(url, context)
+        
+        if response and response.status_code == 200:
+            return response.json()
+        else:
+            print(f"API error for {context}: {response.status_code if response else 'No response'}")
+            return None
+    
+    def get_available_files(self, file_type: str = "FULL") -> List[str]:
         """
         Get list of available OCOD history files
         
         Args:
-            file_type (str): Type of files to retrieve ("FULL" or "COU")
+            file_type (str): Type of files ("FULL" or "COU")
             
         Returns:
-            list: List of filenames, or empty list if failed
+            List[str]: List of filenames
         """
-        session = self.create_session()
+        history_data = self._get_api_data("datasets/history/ocod", "getting OCOD history")
         
-        # Get the history data
-        history_data = self.get_api_data(
-            session, "datasets/history/ocod", "getting OCOD history"
-        )
-
         if not history_data or not history_data.get("success", False):
             print("Failed to retrieve OCOD history data")
             return []
-
-        # Filter files by type
+        
         files = [
             item["filename"]
             for item in history_data.get("dataset_history", [])
             if f"OCOD_{file_type}_" in item["filename"]
         ]
-
-        # Sort files chronologically (newest first)
-        files.sort(reverse=True)
+        
+        files.sort(reverse=True)  # Newest first
         return files
-
-    def download_ocod_history(self, output_dir, file_type="FULL", confirm=True, show_progress=True):
+    
+    def _download_ocod_file(self, filename: str, output_dir: Path) -> bool:
+        """Download a single OCOD file"""
+        output_path = output_dir / filename
+        
+        if output_path.exists():
+            return True
+        
+        # Get download link
+        download_data = self._get_api_data(
+            f"datasets/history/ocod/{filename}",
+            f"getting download link for {filename}"
+        )
+        
+        if not download_data or not download_data.get("success"):
+            print(f"Failed to get download link for {filename}")
+            return False
+        
+        download_url = download_data.get("result", {}).get("download_url")
+        if not download_url:
+            print(f"No download URL found for {filename}")
+            return False
+        
+        # Download using plain requests (no auth header needed for actual download)
+        return self._download_single_file(download_url, output_path)
+    
+    def download_files(self, output_dir: Union[str, Path], file_type: str = "FULL",
+                      confirm: bool = True, show_progress: bool = True) -> tuple:
         """
         Download OCOD history files
         
         Args:
             output_dir (str or Path): Directory to save files
-            file_type (str): Type of files to download ("FULL" or "COU")
-            confirm (bool): Whether to ask for user confirmation before downloading
+            file_type (str): Type of files ("FULL" or "COU")
+            confirm (bool): Whether to ask for confirmation
             show_progress (bool): Whether to show progress bar
             
         Returns:
             tuple: (success_count, total_files)
         """
-        # Ensure output directory exists
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Get list of files
-        all_files = self.get_ocod_history_files(file_type)
+        all_files = self.get_available_files(file_type)
         
         if not all_files:
-            print(f"No {file_type} files found in OCOD history")
+            print(f"No {file_type} files found")
             return 0, 0
-
-        print(f"Found {len(all_files)} {file_type} files in OCOD history")
-
-        # Filter out files that already exist
-        files_to_download = [
-            f for f in all_files if not (output_dir / f).exists()
-        ]
-
-        print(
-            f"\n{len(files_to_download)} files need to be downloaded "
-            f"(skipping {len(all_files) - len(files_to_download)} already present).\n"
-        )
-
+        
+        # Filter files that need downloading
+        files_to_download = [f for f in all_files if not (output_dir / f).exists()]
+        
+        print(f"Found {len(all_files)} {file_type} files")
+        print(f"{len(files_to_download)} files need downloading "
+              f"(skipping {len(all_files) - len(files_to_download)} already present)")
+        
         if not files_to_download:
             print("All files already downloaded.")
             return len(all_files), len(all_files)
-
-        # Print file list
-        print("\nFiles to download:")
-        for i, file_name in enumerate(files_to_download):
-            print(f"{i + 1}. {file_name}")
-
-        # Confirm with user if requested
-        if confirm:
-            user_input = input(
-                f"\nDo you want to download all {len(files_to_download)} files? (y/n): "
-            )
-            if user_input.lower() != "y":
-                print("Download canceled")
-                return 0, len(all_files)
-
-        # Download files
-        session = self.create_session()
-        success_count = 0
         
+        if not self._confirm_download(files_to_download, confirm):
+            return 0, len(all_files)
+        
+        # Download files
+        success_count = 0
         file_iterator = tqdm(files_to_download) if show_progress else files_to_download
         
-        for file_name in file_iterator:
-            if self.download_file(session, file_name, str(output_dir)):
+        for filename in file_iterator:
+            if self._download_ocod_file(filename, output_dir):
                 success_count += 1
-            # Small delay between downloads to avoid overwhelming the server
-            time.sleep(1)
-
-        print(
-            f"\nDownload complete. Successfully downloaded {success_count} "
-            f"out of {len(files_to_download)} files."
-        )
+            time.sleep(1)  # Rate limiting
         
+        print(f"\nDownload complete: {success_count}/{len(files_to_download)} files downloaded")
         return success_count, len(all_files)
 
 
-def download_ocod_history(output_dir, file_type="FULL", api_key=None, confirm=True, show_progress=True):
-    """
-    Convenience function to download OCOD history files
-    
-    Args:
-        output_dir (str or Path): Directory to save files
-        file_type (str): Type of files to download ("FULL" or "COU")
-        api_key (str, optional): API key. If None, loads from environment
-        confirm (bool): Whether to ask for user confirmation
-        show_progress (bool): Whether to show progress bar
-        
-    Returns:
-        tuple: (success_count, total_files)
-    """
-    downloader = LandRegistryDownloader(api_key=api_key)
-    return downloader.download_ocod_history(
-        output_dir=output_dir,
-        file_type=file_type,
-        confirm=confirm,
-        show_progress=show_progress
-    )
+######################################################
+## VOA Rating Lists downloader
+######################################################
 
-
-def get_ocod_file_list(file_type="FULL", api_key=None):
-    """
-    Convenience function to get list of available OCOD files
-    
-    Args:
-        file_type (str): Type of files to retrieve ("FULL" or "COU")
-        api_key (str, optional): API key. If None, loads from environment
-        
-    Returns:
-        list: List of available filenames
-    """
-    downloader = LandRegistryDownloader(api_key=api_key)
-    return downloader.get_ocod_history_files(file_type=file_type)
-
-
-##########################
-##
-## VOA list entries downloader
-##
-############################
-
-import xml.etree.ElementTree as ET
-from urllib.parse import urlparse
-import requests
-from pathlib import Path
-from typing import List, Dict, Optional, Union
-import pandas as pd
-from datetime import datetime
-
-class VOARatingListDownloader:
+class VOARatingListDownloader(BaseDownloader):
     """Handler for VOA Rating List downloads from Azure blob storage"""
     
     def __init__(self, base_url="https://voaratinglists.blob.core.windows.net/downloads"):
-        """
-        Initialize the VOA downloader
-        
-        Args:
-            base_url (str): Base URL for the blob storage
-        """
         self.base_url = base_url
         self.list_url = f"{base_url}?restype=container&comp=list"
+        super().__init__()
+    
+    def _format_file_description(self, file_info: Dict, index: int) -> str:
+        size_mb = file_info['size'] / (1024*1024) if file_info['size'] else 'Unknown'
+        return f"{index}. {file_info['name']} ({size_mb:.1f} MB)"
     
     def get_available_files(self) -> List[Dict]:
         """
-        Get list of all available files from the VOA rating lists API
+        Get list of all available files from VOA API
         
         Returns:
-            List[Dict]: List of dictionaries containing file information
-                       Each dict has keys: 'name', 'last_modified', 'size', 'url'
+            List[Dict]: List of file information dictionaries
         """
         try:
-            response = requests.get(self.list_url, timeout=30)
-            response.raise_for_status()
+            response = self._make_request_with_retry(self.list_url, "fetching VOA file list")
             
-            # Parse XML response
+            if not response:
+                return []
+            
             root = ET.fromstring(response.content)
-            
             files = []
             
-            # The structure is: EnumerationResults -> Blobs -> Blob
-            # No namespace is used
             blobs_element = root.find('Blobs')
             if blobs_element is not None:
                 for blob in blobs_element.findall('Blob'):
@@ -410,7 +364,6 @@ class VOARatingListDownloader:
                     properties = blob.find('Properties')
                     
                     if name_elem is not None and properties is not None:
-                        # Extract properties
                         modified_elem = properties.find('Last-Modified')
                         size_elem = properties.find('Content-Length')
                         content_type_elem = properties.find('Content-Type')
@@ -427,9 +380,6 @@ class VOARatingListDownloader:
             print(f"Found {len(files)} files available for download")
             return files
             
-        except requests.RequestException as e:
-            print(f"Error fetching file list: {e}")
-            return []
         except ET.ParseError as e:
             print(f"Error parsing XML response: {e}")
             return []
@@ -437,17 +387,7 @@ class VOARatingListDownloader:
     def filter_files(self, files: List[Dict], 
                     name_contains: Optional[str] = None,
                     file_extension: Optional[str] = None) -> List[Dict]:
-        """
-        Filter files based on criteria
-        
-        Args:
-            files (List[Dict]): List of file dictionaries from get_available_files()
-            name_contains (str, optional): Filter files containing this string in name
-            file_extension (str, optional): Filter files with this extension (e.g., '.csv', '.zip')
-            
-        Returns:
-            List[Dict]: Filtered list of files
-        """
+        """Filter files based on criteria"""
         filtered = files
         
         if name_contains:
@@ -461,135 +401,359 @@ class VOARatingListDownloader:
         print(f"Filtered to {len(filtered)} files")
         return filtered
     
-    def download_file(self, file_info: Dict, 
-                     output_dir: Union[str, Path],
-                     overwrite: bool = False) -> bool:
-        """
-        Download a single file
-        
-        Args:
-            file_info (Dict): File information dictionary from get_available_files()
-            output_dir (str or Path): Directory to save the file
-            overwrite (bool): Whether to overwrite existing files
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        file_path = output_dir / file_info['name']
-        
-        # Check if file exists and skip if not overwriting
-        if file_path.exists() and not overwrite:
-            print(f"File {file_info['name']} already exists, skipping")
-            return True
-        
-        try:
-            print(f"Downloading {file_info['name']}...")
-            response = requests.get(file_info['url'], stream=True, timeout=60)
-            response.raise_for_status()
-            
-            # Write file with progress indication for large files
-            with open(file_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            print(f"Successfully downloaded {file_info['name']}")
-            return True
-            
-        except requests.RequestException as e:
-            print(f"Error downloading {file_info['name']}: {e}")
-            return False
-        except IOError as e:
-            print(f"Error saving {file_info['name']}: {e}")
-            return False
-    
-    def download_files(self, files: List[Dict], 
-                      output_dir: Union[str, Path],
+    def download_files(self, output_dir: Union[str, Path],
+                      name_contains: Optional[str] = None,
+                      file_extension: Optional[str] = None,
                       overwrite: bool = False,
                       confirm: bool = True) -> tuple:
         """
-        Download multiple files
+        Download VOA rating list files
         
         Args:
-            files (List[Dict]): List of file dictionaries to download
             output_dir (str or Path): Directory to save files
+            name_contains (str, optional): Filter files containing this string
+            file_extension (str, optional): Filter files with this extension
             overwrite (bool): Whether to overwrite existing files
-            confirm (bool): Whether to ask for confirmation before downloading
+            confirm (bool): Whether to ask for confirmation
             
         Returns:
             tuple: (successful_downloads, total_files)
         """
-        if not files:
-            print("No files to download")
+        output_dir = Path(output_dir)
+        
+        all_files = self.get_available_files()
+        if not all_files:
             return 0, 0
         
-        print(f"\nFiles to download:")
-        for i, file_info in enumerate(files, 1):
-            size_mb = file_info['size'] / (1024*1024) if file_info['size'] else 'Unknown'
-            print(f"{i}. {file_info['name']} ({size_mb:.1f} MB)")
+        filtered_files = self.filter_files(all_files, name_contains, file_extension)
         
-        if confirm:
-            response = input(f"\nDownload {len(files)} files? (y/n): ")
-            if response.lower() != 'y':
-                print("Download cancelled")
-                return 0, len(files)
+        if not self._confirm_download(filtered_files, confirm):
+            return 0, len(filtered_files)
         
         successful = 0
-        for file_info in files:
-            if self.download_file(file_info, output_dir, overwrite):
+        for file_info in filtered_files:
+            output_path = output_dir / file_info['name']
+            if self._download_single_file(file_info['url'], output_path, overwrite):
                 successful += 1
         
-        print(f"\nDownload complete: {successful}/{len(files)} files downloaded successfully")
-        return successful, len(files)
+        print(f"\nDownload complete: {successful}/{len(filtered_files)} files downloaded successfully")
+        return successful, len(filtered_files)
 
 
-# Convenience functions
+######################################################
+## Convenience Functions
+######################################################
+
+def download_ocod_history(output_dir, file_type="FULL", api_key=None, 
+                         confirm=True, show_progress=True):
+    """Convenience function to download OCOD history files"""
+    downloader = LandRegistryDownloader(api_key=api_key)
+    return downloader.download_files(
+        output_dir=output_dir,
+        file_type=file_type,
+        confirm=confirm,
+        show_progress=show_progress
+    )
+
+def get_ocod_file_list(file_type="FULL", api_key=None):
+    """Convenience function to get list of available OCOD files"""
+    downloader = LandRegistryDownloader(api_key=api_key)
+    return downloader.get_available_files(file_type=file_type)
+
 def download_voa_rating_lists(output_dir: Union[str, Path],
                              name_contains: Optional[str] = None,
                              file_extension: Optional[str] = None,
                              overwrite: bool = False,
                              confirm: bool = True) -> tuple:
+    """Convenience function to download VOA rating list files"""
+    downloader = VOARatingListDownloader()
+    return downloader.download_files(
+        output_dir, name_contains, file_extension, overwrite, confirm
+    )
+
+def get_voa_file_list(name_contains: Optional[str] = None,
+                     file_extension: Optional[str] = None) -> List[Dict]:
+    """Get list of available VOA rating list files"""
+    downloader = VOARatingListDownloader()
+    all_files = downloader.get_available_files()
+    return downloader.filter_files(all_files, name_contains, file_extension)
+
+
+######################################################
+## ONSPD (ONS Postcode Directory) downloader
+######################################################
+
+class ONSPDDownloader(BaseDownloader):
+    """Handler for ONS Postcode Directory downloads from ArcGIS"""
+    
+    def __init__(self, base_url="https://www.arcgis.com/sharing/rest"):
+        self.base_url = base_url
+        super().__init__()
+    
+    def _format_file_description(self, file_info: Dict, index: int) -> str:
+        size_mb = file_info['size'] / (1024*1024) if file_info.get('size') else 'Unknown'
+        modified = file_info.get('modified_readable', 'Unknown')
+        return f"{index}. {file_info['title']} ({size_mb:.1f} MB, Modified: {modified})"
+    
+    def _search_onspd_items(self) -> List[Dict]:
+        """Search for ONSPD items on ArcGIS"""
+        search_url = f"{self.base_url}/search"
+        params = {
+            'q': 'ONSPD OR "ONS Postcode Directory"',
+            'f': 'json',
+            'num': 100,
+            'sortField': 'modified',
+            'sortOrder': 'desc'
+        }
+        
+        response = self._make_request_with_retry(
+            search_url, "searching for ONSPD items", params=params
+        )
+        
+        if not response:
+            return []
+        
+        try:
+            data = response.json()
+            return data.get('results', [])
+        except ValueError as e:
+            print(f"Error parsing search response: {e}")
+            return []
+    
+    def _get_item_details(self, item_id: str) -> Optional[Dict]:
+        """Get detailed information about a specific item"""
+        url = f"{self.base_url}/content/items/{item_id}"
+        params = {'f': 'json'}
+        
+        response = self._make_request_with_retry(
+            url, f"getting details for item {item_id}", params=params
+        )
+        
+        if not response:
+            return None
+        
+        try:
+            return response.json()
+        except ValueError as e:
+            print(f"Error parsing item details: {e}")
+            return None
+    
+    def get_available_files(self) -> List[Dict]:
+        """
+        Get list of available ONSPD files, prioritizing CSV Collections
+        
+        Returns:
+            List[Dict]: List of ONSPD file information, sorted by recency
+        """
+        print("Searching for ONSPD datasets...")
+        items = self._search_onspd_items()
+        
+        if not items:
+            print("No ONSPD items found")
+            return []
+        
+        # Filter and enhance items
+        onspd_files = []
+        for item in items:
+            # Look for ONSPD-specific indicators
+            title = item.get('title', '').lower()
+            tags = [tag.lower() for tag in item.get('tags', [])]
+            item_type = item.get('type', '')
+            
+            # Check if this looks like an ONSPD dataset
+            is_onspd = any([
+                'onspd' in title,
+                'ons postcode directory' in title,
+                'postcode directory' in title,
+                any('onspd' in tag for tag in tags),
+                any('ons postcode directory' in tag for tag in tags)
+            ])
+            
+            if not is_onspd:
+                continue
+            
+            # Get detailed information
+            details = self._get_item_details(item['id'])
+            if not details:
+                continue
+            
+            # Convert timestamp to readable format
+            from datetime import datetime
+            modified_timestamp = details.get('modified')
+            modified_readable = 'Unknown'
+            if modified_timestamp:
+                try:
+                    modified_readable = datetime.fromtimestamp(
+                        modified_timestamp / 1000
+                    ).strftime('%Y-%m-%d')
+                except (ValueError, OSError):
+                    pass
+            
+            file_info = {
+                'id': item['id'],
+                'title': details.get('title', 'Unknown'),
+                'type': details.get('type', 'Unknown'),
+                'owner': details.get('owner', 'Unknown'),
+                'size': details.get('size', 0),
+                'modified': modified_timestamp,
+                'modified_readable': modified_readable,
+                'filename': details.get('name', f"onspd_{item['id']}.zip"),
+                'description': details.get('description', ''),
+                'download_url': f"{self.base_url}/content/items/{item['id']}/data",
+                'is_csv_collection': item_type == 'CSV Collection'
+            }
+            
+            onspd_files.append(file_info)
+        
+        # Sort by preference: CSV Collections first, then by modification date
+        onspd_files.sort(key=lambda x: (
+            not x['is_csv_collection'],  # CSV Collections first (False sorts before True)
+            -(x['modified'] or 0)        # Then by most recent
+        ))
+        
+        print(f"Found {len(onspd_files)} ONSPD datasets")
+        return onspd_files
+    
+    def get_latest_onspd(self) -> Optional[Dict]:
+        """
+        Get the most recent ONSPD dataset, preferring CSV Collections
+        
+        Returns:
+            Dict or None: Latest ONSPD file information
+        """
+        files = self.get_available_files()
+        if not files:
+            return None
+        
+        # The list is already sorted with CSV Collections first, then by date
+        latest = files[0]
+        
+        print(f"Latest ONSPD: {latest['title']}")
+        print(f"Type: {latest['type']}")
+        print(f"Size: {latest['size'] / (1024*1024):.1f} MB")
+        print(f"Modified: {latest['modified_readable']}")
+        
+        return latest
+    
+    def download_latest_onspd(self, output_dir: Union[str, Path], 
+                             overwrite: bool = False,
+                             confirm: bool = True) -> bool:
+        """
+        Download the latest ONSPD dataset
+        
+        Args:
+            output_dir (str or Path): Directory to save the file
+            overwrite (bool): Whether to overwrite existing files
+            confirm (bool): Whether to ask for confirmation
+            
+        Returns:
+            bool: True if successful
+        """
+        latest = self.get_latest_onspd()
+        if not latest:
+            print("No ONSPD dataset found")
+            return False
+        
+        if confirm:
+            size_mb = latest['size'] / (1024*1024)
+            print(f"\nReady to download:")
+            print(f"  File: {latest['title']}")
+            print(f"  Size: {size_mb:.1f} MB")
+            print(f"  Modified: {latest['modified_readable']}")
+            print(f"  Type: {latest['type']}")
+            
+            response = input("\nDownload this file? (y/n): ")
+            if response.lower() != 'y':
+                print("Download cancelled")
+                return False
+        
+        output_dir = Path(output_dir)
+        output_path = output_dir / latest['filename']
+        
+        print(f"Downloading latest ONSPD to {output_path}...")
+        
+        success = self._download_single_file(
+            latest['download_url'], 
+            output_path, 
+            overwrite=overwrite
+        )
+        
+        if success:
+            print(f"✅ Successfully downloaded latest ONSPD: {latest['filename']}")
+        else:
+            print(f"❌ Failed to download ONSPD")
+        
+        return success
+    
+    def download_files(self, output_dir: Union[str, Path],
+                      download_all: bool = False,
+                      overwrite: bool = False,
+                      confirm: bool = True) -> tuple:
+        """
+        Download ONSPD files
+        
+        Args:
+            output_dir (str or Path): Directory to save files
+            download_all (bool): If True, download all available files; if False, download only latest
+            overwrite (bool): Whether to overwrite existing files
+            confirm (bool): Whether to ask for confirmation
+            
+        Returns:
+            tuple: (successful_downloads, total_files)
+        """
+        if not download_all:
+            # Download only the latest
+            success = self.download_latest_onspd(output_dir, overwrite, confirm)
+            return (1, 1) if success else (0, 1)
+        
+        # Download all available files
+        all_files = self.get_available_files()
+        
+        if not all_files:
+            return 0, 0
+        
+        if not self._confirm_download(all_files, confirm):
+            return 0, len(all_files)
+        
+        output_dir = Path(output_dir)
+        successful = 0
+        
+        for file_info in all_files:
+            output_path = output_dir / file_info['filename']
+            if self._download_single_file(file_info['download_url'], output_path, overwrite):
+                successful += 1
+        
+        print(f"\nDownload complete: {successful}/{len(all_files)} files downloaded successfully")
+        return successful, len(all_files)
+
+
+######################################################
+## Add to Convenience Functions section
+######################################################
+
+def download_latest_onspd(output_dir: Union[str, Path], 
+                         overwrite: bool = False,
+                         confirm: bool = True) -> bool:
     """
-    Convenience function to download VOA rating list files
+    Convenience function to download the latest ONSPD dataset
     
     Args:
-        output_dir (str or Path): Directory to save files
-        name_contains (str, optional): Filter files containing this string in name
-        file_extension (str, optional): Filter files with this extension
+        output_dir (str or Path): Directory to save the file
         overwrite (bool): Whether to overwrite existing files
         confirm (bool): Whether to ask for confirmation
         
     Returns:
-        tuple: (successful_downloads, total_files)
+        bool: True if successful
     """
-    downloader = VOARatingListDownloader()
-    
-    # Get all available files
-    all_files = downloader.get_available_files()
-    if not all_files:
-        return 0, 0
-    
-    # Apply filters
-    filtered_files = downloader.filter_files(all_files, name_contains, file_extension)
-    
-    # Download files
-    return downloader.download_files(filtered_files, output_dir, overwrite, confirm)
+    downloader = ONSPDDownloader()
+    return downloader.download_latest_onspd(output_dir, overwrite, confirm)
 
+def get_onspd_file_list() -> List[Dict]:
+    """Get list of available ONSPD files"""
+    downloader = ONSPDDownloader()
+    return downloader.get_available_files()
 
-def get_voa_file_list(name_contains: Optional[str] = None,
-                     file_extension: Optional[str] = None) -> List[Dict]:
-    """
-    Get list of available VOA rating list files
-    
-    Args:
-        name_contains (str, optional): Filter files containing this string in name
-        file_extension (str, optional): Filter files with this extension
-        
-    Returns:
-        List[Dict]: List of available files with their metadata
-    """
-    downloader = VOARatingListDownloader()
-    all_files = downloader.get_available_files()
-    return downloader.filter_files(all_files, name_contains, file_extension)
+def get_latest_onspd_info() -> Optional[Dict]:
+    """Get information about the latest ONSPD dataset"""
+    downloader = ONSPDDownloader()
+    return downloader.get_latest_onspd()

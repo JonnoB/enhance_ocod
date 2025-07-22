@@ -97,7 +97,11 @@ output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
 model_path = (
     SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
 )
-ONSPD_path = SCRIPT_DIR.parent / "data" / "ONSPD_FEB_2025.zip"
+
+
+ONSPD_dir = SCRIPT_DIR.parent / "data" / "price_paid_data"
+ONSPD_files = list(ONSPD_dir.glob("*"))
+ONSPD_path = ONSPD_files[0] if ONSPD_files else None
 
 price_paid_dir = SCRIPT_DIR.parent / "data" / "price_paid_data"
 price_paid_files = list(price_paid_dir.glob("*"))
@@ -105,7 +109,8 @@ price_paid_path = price_paid_files[0] if price_paid_files else None
 
 processed_price_paid_dir = SCRIPT_DIR.parent / "data" / "processed_price_paid"
 
-voa_files = list((SCRIPT_DIR.parent / "data" / "voa").glob("*"))
+voa_dir = SCRIPT_DIR.parent / "data" / "voa"
+voa_files = list(voa_dir.glob("*"))
 voa_path = voa_files[0] if voa_files else None
 
 output_dir.mkdir(parents=True, exist_ok=True)
