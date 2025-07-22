@@ -93,7 +93,7 @@ def main():
 
         # Download it
         downloader = VOARatingListDownloader()
-        downloader.download_files(latest_baseline, str(VOA_DIR), confirm = False)
+        downloader.download_files(str(VOA_DIR),name_contains = latest_baseline['name'] , confirm = False)
     
     # Download the OCOD history (this already has built-in file checking)
     print("Downloading OCOD history files")
