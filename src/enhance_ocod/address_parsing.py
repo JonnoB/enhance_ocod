@@ -307,26 +307,31 @@ def identify_multi_addresses(all_entities):
 
 def spread_address_labels(df, all_multi_ids):
     """
-    This function spreads the address dataframe  so that each
-    label class is it's own column
+    This function spreads the address dataframe so that each
+    label class is its own column
     """
-    # pivot the columns so that each label class is it's own column and the value in the column is the text
-
+    # Filter and pivot in one step, using datapoint_id as the index
     temp_df = df[df.datapoint_id.isin(all_multi_ids)].copy()
-
-    temp_df["index"] = temp_df.index
-    df = temp_df[["index", "label", "label_text"]].pivot(
-        index="index", columns="label", values="label_text"
+    
+    # Pivot with datapoint_id as index to preserve it
+    pivoted_df = temp_df.pivot_table(
+        index="datapoint_id", 
+        columns="label", 
+        values="label_text",
+        aggfunc='first'  # Handle duplicates if any
     )
-    # add the datapoint_id back in for each of joining
-    df = pd.concat([temp_df["datapoint_id"], df], axis=1).merge(
+    
+    # Reset index to make datapoint_id a column again
+    pivoted_df = pivoted_df.reset_index()
+    
+    # Add back the text column
+    pivoted_df = pivoted_df.merge(
         temp_df[["datapoint_id", "text"]].drop_duplicates(),
-        how="left",
-        left_on="datapoint_id",
-        right_on="datapoint_id",
+        on="datapoint_id",
+        how="left"
     )
-
-    return df
+    
+    return pivoted_df
 
 
 def add_backfill_blockers(df):
