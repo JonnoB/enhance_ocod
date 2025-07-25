@@ -251,7 +251,7 @@ def check_and_preprocess_if_needed(
     raw_data_path, postcode_district_lookup, processed_dir="data/processed_price_paid"
 ):
     """
-    Check if processed data exists, if not run preprocessing
+    Check if processed price paid data exists, if not run preprocessing
     """
     if not os.path.exists(processed_dir) or len(os.listdir(processed_dir)) == 0:
         print("Processed data not found. Starting preprocessing...")
@@ -289,7 +289,7 @@ def load_and_process_pricepaid_data(
     file_path, processed_dir, postcode_district_lookup, years_needed
 ):
     """
-    New main function that uses the preprocessing approach
+    Loads the price paid data for the selected number of years. If no pre-processed data is available, it will pre-process then laod
     """
     # Check and preprocess if needed
     check_and_preprocess_if_needed(file_path, postcode_district_lookup, processed_dir)

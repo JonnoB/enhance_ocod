@@ -98,20 +98,19 @@ model_path = (
     SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
 )
 
+def get_first_file_in_data_dir(dirname):
+    """Get the first file in a data subdirectory, or None if no files exist."""
+    data_dir = SCRIPT_DIR.parent / "data" / dirname
+    files = list(data_dir.glob("*"))
+    return files[0] if files else None
 
-ONSPD_dir = SCRIPT_DIR.parent / "data" / "price_paid_data"
-ONSPD_files = list(ONSPD_dir.glob("*"))
-ONSPD_path = ONSPD_files[0] if ONSPD_files else None
+# Usage
+ONSPD_path = get_first_file_in_data_dir("onspd")
+price_paid_path = get_first_file_in_data_dir("price_paid_data")
+voa_path = get_first_file_in_data_dir("voa")
 
-price_paid_dir = SCRIPT_DIR.parent / "data" / "price_paid_data"
-price_paid_files = list(price_paid_dir.glob("*"))
-price_paid_path = price_paid_files[0] if price_paid_files else None
 
 processed_price_paid_dir = SCRIPT_DIR.parent / "data" / "processed_price_paid"
-
-voa_dir = SCRIPT_DIR.parent / "data" / "voa"
-voa_files = list(voa_dir.glob("*"))
-voa_path = voa_files[0] if voa_files else None
 
 output_dir.mkdir(parents=True, exist_ok=True)
 

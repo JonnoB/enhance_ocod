@@ -228,8 +228,9 @@ def preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup):
 
 def add_missing_lads_ocod(ocod_data, price_paid_df):
     """
-    Not all observations have a postcode and some postcodes are erroneous or otherwise cannot be found in the postcode database
-    These entries need to be found and valid districts added in
+    Not all OCOD entries have a postcode this means that there is no corresponding LAD code.
+    The LAD code is needed for more advanced address matching.
+    To resolve this the LAD Name is matched to a lookup of name to code using the price paid dataset
     """
 
     # when there are multiples take the lad11cd with the largest number of counts
