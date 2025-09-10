@@ -169,32 +169,7 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
 
 
 def preprocess_expanded_ocod_data(ocod_data, postcode_district_lookup):
-    """
-    Add missing LAD (Local Authority District) codes to OCOD data.
-    
-    Not all observations have a postcode and some postcodes are erroneous or 
-    otherwise cannot be found in the postcode database. This function finds 
-    these entries and adds valid district codes by creating a lookup table 
-    from the price paid data.
-    
-    Args:
-        ocod_data (pandas.DataFrame): The OCOD dataset that may contain missing 
-            LAD codes in the 'lad11cd' column.
-        price_paid_df (pandas.DataFrame): Reference dataset containing valid 
-            'district' and 'lad11cd' mappings used to fill missing values.
-            
-    Returns:
-        pandas.DataFrame: The OCOD dataset with missing LAD codes filled in 
-            where possible based on district mappings from the price paid data.
-            
-    Notes:
-        When multiple LAD codes exist for the same district in the reference 
-        data, the function selects the LAD code with the highest frequency 
-        (most common occurrence).
-        
-    Examples:
-        >>> ocod_with_lads = add_missing_lads_ocod(ocod_data, price_paid_data)
-    """
+
     ##add in the geographic area data like lsoa etc
     ocod_data["postcode2"] = (
         ocod_data["postcode"].str.lower().str.replace("\s", "", regex=True)
@@ -228,9 +203,30 @@ def preprocess_expanded_ocod_data(ocod_data, postcode_district_lookup):
 
 def add_missing_lads_ocod(ocod_data, price_paid_df):
     """
-    Not all OCOD entries have a postcode this means that there is no corresponding LAD code.
-    The LAD code is needed for more advanced address matching.
-    To resolve this the LAD Name is matched to a lookup of name to code using the price paid dataset
+    Add missing LAD (Local Authority District) codes to OCOD data.
+    
+    Not all observations have a postcode and some postcodes are erroneous or 
+    otherwise cannot be found in the postcode database. This function finds 
+    these entries and adds valid district codes by creating a lookup table 
+    from the price paid data.
+    
+    Args:
+        ocod_data (pandas.DataFrame): The OCOD dataset that may contain missing 
+            LAD codes in the 'lad11cd' column.
+        price_paid_df (pandas.DataFrame): Reference dataset containing valid 
+            'district' and 'lad11cd' mappings used to fill missing values.
+            
+    Returns:
+        pandas.DataFrame: The OCOD dataset with missing LAD codes filled in 
+            where possible based on district mappings from the price paid data.
+            
+    Notes:
+        When multiple LAD codes exist for the same district in the reference 
+        data, the function selects the LAD code with the highest frequency 
+        (most common occurrence).
+        
+    Examples:
+        >>> ocod_with_lads = add_missing_lads_ocod(ocod_data, price_paid_data)
     """
 
     # when there are multiples take the lad11cd with the largest number of counts

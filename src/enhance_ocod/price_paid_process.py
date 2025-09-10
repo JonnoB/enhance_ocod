@@ -490,13 +490,12 @@ def calculate_average_prices(df):
 
     return average_prices
 
-def building_gazetteer(price_paid_folder = '../data/processed_price_paid'):
-
+def gazetteer_generator(price_paid_folder='../data/processed_price_paid'):
     """
-    Create a gazetteer that matches building names to LSOA and associated geography.
+    Create gazetteers that match building names, districts, and streets to LSOA and associated geography.
 
-    This function processes Land Registry price paid data to create a gazetteer
-    that maps building names to their corresponding geographic codes (OA, LSOA,
+    This function processes Land Registry price paid data to create gazetteers
+    that map building names, districts, and streets to their corresponding geographic codes (OA, LSOA,
     MSOA, LAD). It is primarily used to geolocate new developments that often
     lack postcodes, enabling pricing statistics to be inferred for these
     properties.
@@ -509,48 +508,132 @@ def building_gazetteer(price_paid_folder = '../data/processed_price_paid'):
 
     Returns
     -------
-    pandas.DataFrame
-        A DataFrame containing unique building names and their associated
-        geographic codes with columns:
-        - building : str, building name extracted from PAON
-        - oa11cd : str, Output Area code
-        - lsoa11cd : str, Lower Super Output Area code
+    tuple of pandas.DataFrame
+        A tuple containing three DataFrames:
+        - building_gazetteer: DataFrame with building names and geographic codes
+        - district_gazetteer: DataFrame with districts and LAD codes
+        - street_gazetteer: DataFrame with streets and geographic codes
+        
+        building_gazetteer columns:
+        - building_name : str, building name extracted from PAON
+        - oa11cd : str, Output Area code (corresponding to the selected LSOA)
+        - lsoa11cd : str, Lower Super Output Area code (most common for this building/LAD)
         - msoa11cd : str, Middle Super Output Area code
         - lad11cd : str, Local Authority District code
+        - fraction : float, fraction this LSOA makes up for this building in this LAD
+        
+        district_gazetteer columns:
+        - district : str, district name
+        - lad11cd : str, Local Authority District code
+        
+        street_gazetteer columns:
+        - street_name2 : str, street name
+        - lsoa11cd : str, Lower Super Output Area code (most common for this street/LAD)
+        - oa11cd : str, Output Area code (corresponding to the selected LSOA)
+        - msoa11cd : str, Middle Super Output Area code
+        - lad11cd : str, Local Authority District code
+        - fraction : float, fraction this LSOA makes up for this street in this LAD
 
     Notes
     -----
     - Designed to work with parquet files created by `load_and_process_pricepaid_data`
       from the `price_paid_process` module
-    - Only processes properties with PAON containing 'wharf', 'building', 
-      'apartment', or 'house'
-    - Removes duplicates based on building name and LAD code combination
-    - Processing time is typically under 2 minutes
+    - Building gazetteer only processes properties with PAON containing 'wharf', 'building', 
+      'apartment', 'house', or 'court'
+    - Building gazetteer uses the most frequent LSOA code when multiple exist for same building/LAD combination
+    - District gazetteer uses the most frequent LAD code when multiple exist for same district
+    - Street gazetteer uses the most frequent LSOA code when multiple exist for same street/LAD combination
+    - Building and street gazetteers include fraction showing how dominant the selected LSOA is for that building/street and LAD
+    - Processing time is typically under 3 minutes
     - Files are processed individually to prevent memory issues
 
     Examples
     --------
-    >>> gazetteer = building_gazetteer()
-    >>> print(gazetteer.head())
+    >>> building_gaz, district_gaz, street_gaz = gazetteer_generator()
+    >>> print(building_gaz.head())
+    >>> print(district_gaz.head())
+    >>> print(street_gaz.head())
     
     >>> custom_path = '/path/to/price/paid/data'
-    >>> gazetteer = building_gazetteer(price_paid_folder=custom_path)
+    >>> building_gaz, district_gaz, street_gaz = gazetteer_generator(price_paid_folder=custom_path)
     """
 
-    outframe = []
+    df = []
     
     for file in tqdm(Path(price_paid_folder).glob('*.parquet')):
         temp = pd.read_parquet(file)
-        # Minimal processing in loop
-        temp = temp.loc[temp['paon'].str.contains('wharf|building|apartment|house|court', na=False), 
-                       ['paon', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']].copy()
-        outframe.append(temp)
+        # Get relevant columns for all gazetteers
+        temp = temp[['paon', 'district', 'street_name2', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']].copy()
+        df.append(temp)
     
-    # Do ALL processing after concatenation
-    outframe = pd.concat(outframe, ignore_index=True)
-    outframe['building_name'] = outframe['paon'].str.split(',').str[0].astype('string')
-    outframe = (outframe.loc[outframe['building_name'].notna(), 
-                            ['building_name', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']]
-                        .drop_duplicates(subset=['building_name', 'lad11cd']))
+    # Concatenate all data once
+    df = pd.concat(df, ignore_index=True)
     
-    return outframe
+    # Create building gazetteer
+    building_df = df.loc[df['paon'].str.contains('wharf|building|apartment|house|court', na=False)].copy()
+    building_df['building_name'] = building_df['paon'].str.split(',').str[0].astype('string')
+    building_df_clean = building_df.loc[building_df['building_name'].notna(), 
+                                      ['building_name', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']]
+    
+    # Get counts for each building-lad-lsoa combination
+    building_counts = (building_df_clean.groupby(['building_name', 'lad11cd', 'lsoa11cd', 'oa11cd', 'msoa11cd'])
+                      .size()
+                      .reset_index(name='counts'))
+    
+    # Calculate total counts per building-lad combination for fraction calculation
+    building_totals = (building_counts.groupby(['building_name', 'lad11cd'])['counts']
+                      .sum()
+                      .reset_index()
+                      .rename(columns={'counts': 'total_counts'}))
+    
+    # Merge to get total counts
+    building_counts = building_counts.merge(building_totals, on=['building_name', 'lad11cd'])
+    
+    # Calculate fraction
+    building_counts['fraction'] = building_counts['counts'] / building_counts['total_counts']
+    
+    # For each building-lad combination, keep the LSOA with the highest count
+    building_gazetteer = (building_counts.sort_values('counts', ascending=False)
+                         .groupby(['building_name', 'lad11cd'])
+                         .first()
+                         .reset_index()[['building_name', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd', 'fraction']])
+    
+    # Create district gazetteer
+    district_df = df[['district', 'lad11cd']].dropna()
+    # Get counts for each district-lad combination
+    district_counts = (district_df.groupby(['district', 'lad11cd'])
+                      .size()
+                      .reset_index(name='counts'))
+    # For each district, keep the LAD code with the highest count
+    district_gazetteer = (district_counts.sort_values('counts', ascending=False)
+                         .groupby('district')
+                         .first()
+                         .reset_index()[['district', 'lad11cd']])
+    
+    # Create street gazetteer
+    street_df = df[['street_name2', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']].dropna()
+    
+    # Get counts for each street-lad-lsoa combination
+    street_counts = (street_df.groupby(['street_name2', 'lad11cd', 'lsoa11cd', 'oa11cd', 'msoa11cd'])
+                    .size()
+                    .reset_index(name='counts'))
+    
+    # Calculate total counts per street-lad combination for fraction calculation
+    street_totals = (street_counts.groupby(['street_name2', 'lad11cd'])['counts']
+                    .sum()
+                    .reset_index()
+                    .rename(columns={'counts': 'total_counts'}))
+    
+    # Merge to get total counts
+    street_counts = street_counts.merge(street_totals, on=['street_name2', 'lad11cd'])
+    
+    # Calculate fraction
+    street_counts['fraction'] = street_counts['counts'] / street_counts['total_counts']
+    
+    # For each street-lad combination, keep the LSOA with the highest count
+    street_gazetteer = (street_counts.sort_values('counts', ascending=False)
+                       .groupby(['street_name2', 'lad11cd'])
+                       .first()
+                       .reset_index()[['street_name2', 'lsoa11cd', 'oa11cd', 'msoa11cd', 'lad11cd', 'fraction']])
+    
+    return building_gazetteer, district_gazetteer, street_gazetteer
