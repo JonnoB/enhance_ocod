@@ -310,7 +310,7 @@ def spread_address_labels(df, all_multi_ids):
     This function spreads the address dataframe so that each
     label class is its own column
     """
-    # Filter and pivot in one step, using datapoint_id as the index
+    # Take only rows which contain multiple properties
     temp_df = df[df.datapoint_id.isin(all_multi_ids)].copy()
     
     # Pivot with datapoint_id as index to preserve it
@@ -338,7 +338,7 @@ def add_backfill_blockers(df):
     """
     This places blockers in the spread address dataframe to prevent labels
     being propergates back or forword when not logical.
-    As an example if a building is going     to back fill up previous addresses it should not
+    As an example if a building is going to back fill up previous addresses it should not
     back fill past another street as this is highly unlikely to be the same building
 
     """

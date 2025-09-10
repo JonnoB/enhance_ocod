@@ -20,7 +20,7 @@ Processing Pipeline:
    - Adding Local Authority District (LAD) codes and other geographic identifiers
    - Cross-referencing with price paid data for additional location context
 
-3. **Address Matching**: Performs sophisticated address matching against:
+3. **Address Matching**: Performs address matching against:
    - HM Land Registry Price Paid data for property transaction history
    - VOA (Valuation Office Agency) rating list for business classification
    - Street-level and sub-street level matching algorithms
@@ -49,7 +49,7 @@ Example:
 
 Note:
 This is a computationally intensive process that requires significant memory and processing
-time. The script includes memory management strategies and progress tracking.
+time. 
 """
 
 from enhance_ocod.inference import parse_addresses_pipeline, convert_to_entity_dataframe
@@ -60,7 +60,7 @@ from enhance_ocod.address_parsing import (
     load_postcode_district_lookup,
 )
 from enhance_ocod.locate_and_classify import (
-    preprocess_expandaded_ocod_data,
+    preprocess_expanded_ocod_data,
     add_missing_lads_ocod,
     load_voa_ratinglist,
     street_and_building_matching,
@@ -193,7 +193,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     ###############
     print(f"Geolocating {zip_file.name}...")
 
-    ocod_data = preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup)
+    ocod_data = preprocess_expanded_ocod_data(ocod_data, postcode_district_lookup)
 
     price_paid_df = load_and_process_pricepaid_data(
         file_path=str(price_paid_path),

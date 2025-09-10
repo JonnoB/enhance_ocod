@@ -447,6 +447,9 @@ def convert_to_entity_dataframe(results: Dict, batch_size: int = 50000) -> pd.Da
         ["datapoint_id", "label"], sort=False
     ).cumcount()
 
+    # clean up the label text to ensure that later process works as expected
+    all_entities["label_text"] = all_entities["label_text"].astype(str).str.strip()
+
     print("✓ Named Entity Recognition processing complete")
     print(f"Total entities extracted: {len(all_entities):,}")
 

@@ -51,11 +51,35 @@ from pathlib import Path
 from tqdm import tqdm
 from enhance_ocod.locate_and_classify import clean_street_numbers
 from pandas.api.types import CategoricalDtype
-
+import re
+from datetime import datetime
 
 def process_single_chunk(df, postcode_district_lookup):
-    """
-    Modified version that includes price in the output
+    """Clean and standardize a chunk of Price Paid Data.
+
+    Performs data cleaning operations on a DataFrame chunk including string
+    normalization, postcode processing, and merging with geographical lookup
+    data. Modifies data in-place where possible for memory efficiency.
+
+    Args:
+        df (pandas.DataFrame): DataFrame chunk containing raw Price Paid Data
+            with columns including 'street', 'locality', 'paon', and 'postcode'.
+        postcode_district_lookup (pandas.DataFrame): Lookup table containing
+            postcode to geographical area mappings (LSOA, MSOA, etc.) with
+            'postcode2' as the merge key.
+
+    Returns:
+        pandas.DataFrame: Cleaned DataFrame with standardized text fields,
+            processed postcodes, and merged geographical data. Original
+            'street' and 'postcode' columns are removed and replaced with
+            'street_name2' and 'postcode2'.
+
+    Note:
+        - Performs in-place modifications to conserve memory
+        - Street names are lowercased and cleaned of apostrophes and spaces
+        - Postcodes are normalized to lowercase without spaces
+        - Uses left join for geographical data merge
+        - Depends on external `clean_street_numbers()` function
     """
     # Process strings inplace to save memory
     df["street"] = df["street"].astype(str).str.lower()
@@ -95,8 +119,32 @@ def process_single_chunk(df, postcode_district_lookup):
 
 
 def combine_temp_files_for_year(year, output_dir, remaining_data):
-    """
-    Combine temporary files and remaining data for a specific year
+    """Combine temporary files and remaining data for a specific year.
+
+    Helper function for `preprocess_and_save_by_year` that consolidates all
+    temporary parquet files and any remaining in-memory data for a given year
+    into a single final parquet file. Cleans up temporary files after
+    processing to free disk space.
+
+    Args:
+        year (int): The year for which to combine data files.
+        output_dir (str): Directory path containing temporary files and where
+            the final combined file will be saved.
+        remaining_data (list of pandas.DataFrame): List of DataFrames
+            containing any remaining data in memory that hasn't been written
+            to temporary files yet.
+
+    Returns:
+        None: Creates a single parquet file named "price_paid_{year}.parquet"
+            in the output directory.
+
+    Raises:
+        OSError: If unable to read temporary files or write final output file.
+        PermissionError: If unable to delete temporary files after processing.
+
+    Note:
+        - Automatically removes temporary files after successful combination
+        - Handles empty data gracefully (no output file created if no data)
     """
     all_data = []
 
@@ -125,8 +173,34 @@ def combine_temp_files_for_year(year, output_dir, remaining_data):
 def preprocess_and_save_by_year(
     file_path, postcode_district_lookup, output_dir="processed_price_paid"
 ):
-    """
-    Process CSV in chunks, filter by year during reading, and save by year
+    """Process Land Registry Price Paid Data CSV and save by year.
+
+    Processes a large CSV file containing complete Land Registry Price Paid Data
+    in memory-efficient chunks. Filters and organizes data by year, adds LSOA
+    geographical data, and saves as compressed parquet files to reduce storage
+    requirements and improve loading performance.
+
+    Args:
+        file_path (str): Path to the input CSV file containing Price Paid Data.
+        postcode_district_lookup (dict): Dictionary mapping postcodes to LSOA
+            and other geographical data for government geography matching.
+        output_dir (str, optional): Directory path where processed parquet files
+            will be saved. Defaults to "processed_price_paid".
+
+    Returns:
+        None: Files are saved to disk with naming convention
+            "price_paid_{year}.parquet".
+
+    Raises:
+        FileNotFoundError: If the input file_path does not exist.
+        PermissionError: If unable to create output directory or write files.
+
+    Note:
+        - Processes data in chunks to prevent memory overflow on large datasets
+        - Drops unnecessary columns to optimize storage and performance  
+        - Uses categorical data types for efficiency
+        - Creates intermediate temporary files for memory management
+        - Requires external dependencies: pandas, tqdm, pathlib
     """
 
     # making loading more efficient by being explicit about type, for the large file this should make it faster
@@ -415,3 +489,68 @@ def calculate_average_prices(df):
     average_prices = average_prices.reset_index()
 
     return average_prices
+
+def building_gazetteer(price_paid_folder = '../data/processed_price_paid'):
+
+    """
+    Create a gazetteer that matches building names to LSOA and associated geography.
+
+    This function processes Land Registry price paid data to create a gazetteer
+    that maps building names to their corresponding geographic codes (OA, LSOA,
+    MSOA, LAD). It is primarily used to geolocate new developments that often
+    lack postcodes, enabling pricing statistics to be inferred for these
+    properties.
+
+    Parameters
+    ----------
+    price_paid_folder : str, optional
+        Path to the folder containing processed price paid parquet files.
+        Default is '../data/processed_price_paid'.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame containing unique building names and their associated
+        geographic codes with columns:
+        - building : str, building name extracted from PAON
+        - oa11cd : str, Output Area code
+        - lsoa11cd : str, Lower Super Output Area code
+        - msoa11cd : str, Middle Super Output Area code
+        - lad11cd : str, Local Authority District code
+
+    Notes
+    -----
+    - Designed to work with parquet files created by `load_and_process_pricepaid_data`
+      from the `price_paid_process` module
+    - Only processes properties with PAON containing 'wharf', 'building', 
+      'apartment', or 'house'
+    - Removes duplicates based on building name and LAD code combination
+    - Processing time is typically under 2 minutes
+    - Files are processed individually to prevent memory issues
+
+    Examples
+    --------
+    >>> gazetteer = building_gazetteer()
+    >>> print(gazetteer.head())
+    
+    >>> custom_path = '/path/to/price/paid/data'
+    >>> gazetteer = building_gazetteer(price_paid_folder=custom_path)
+    """
+
+    outframe = []
+    
+    for file in tqdm(Path(price_paid_folder).glob('*.parquet')):
+        temp = pd.read_parquet(file)
+        # Minimal processing in loop
+        temp = temp.loc[temp['paon'].str.contains('wharf|building|apartment|house|court', na=False), 
+                       ['paon', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']].copy()
+        outframe.append(temp)
+    
+    # Do ALL processing after concatenation
+    outframe = pd.concat(outframe, ignore_index=True)
+    outframe['building_name'] = outframe['paon'].str.split(',').str[0].astype('string')
+    outframe = (outframe.loc[outframe['building_name'].notna(), 
+                            ['building_name', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']]
+                        .drop_duplicates(subset=['building_name', 'lad11cd']))
+    
+    return outframe

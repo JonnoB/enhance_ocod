@@ -1,5 +1,7 @@
 # Enhanced OCOD: Offshore Companies Ownership Data Processing Pipeline
 
+## This repo is currently undergoing a major overhaul, beware if using at the moment.
+
 ## Overview
 This repository provides a comprehensive pipeline and Python library for cleaning, enhancing, and analyzing the UK Land Registry's Offshore Companies Ownership Data (OCOD). The enhanced OCOD dataset resolves many issues with the raw OCOD data, making it suitable for research, analysis, and reporting on UK property owned by offshore companies.
 

@@ -168,7 +168,7 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
     return postcode_district_lookup
 
 
-def preprocess_expandaded_ocod_data(ocod_data, postcode_district_lookup):
+def preprocess_expanded_ocod_data(ocod_data, postcode_district_lookup):
     """
     Add missing LAD (Local Authority District) codes to OCOD data.
     
