@@ -594,8 +594,7 @@ def property_class(df):
             df['building_name'].notna() & df['street_number'].str.contains(xx_to_yy_regex, na=False)  & df['unit_id'].isna(), # A named building which crosses multiple street addresses but doesn't have sub-units is a business
             df["building_match"],  # a business building was matched
             df["number_match"], # The street and number of a business was matched
-            (~df["number_match"]) & df["street_match"] & df['street_number'].notna(), #The address has a street number but it does not match with any business on the street
-        ],
+         ],
         [
             "land",
             "carpark",
@@ -608,11 +607,27 @@ def property_class(df):
             "business",
             "business",
             "business",
-            "residential"
         ],
         default="unknown",
     )
 
+    return df
+
+def property_class_no_match(df):
+    """
+    A somewhat risky approach to matching that is run given that the basic classification has been performed. 
+    It assumes that any address which has a street number but does not match a known business address is residential.
+    Should be considered the upper end of the number of residential properties.
+    """
+    df["class_no_match"] = np.where(
+        (df["class"] == "unknown") & 
+        (~df["number_match"]) & 
+        df["street_match"] & 
+        df['street_number'].notna(),
+        "residential",
+        df["class"]
+    )
+    
     return df
 
 def tag_multi_property(df):

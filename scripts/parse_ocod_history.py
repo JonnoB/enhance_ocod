@@ -121,7 +121,7 @@ print("Loading common reference data...")
 postcode_district_lookup = load_postcode_district_lookup(str(ONSPD_path))
 voa_businesses = load_voa_ratinglist(str(voa_path), postcode_district_lookup)
 
-check_and_preprocess_price_paid_data(str(price_paid_path), postcode_district_lookup, processed_price_paid_dir)
+check_and_preprocess_price_paid_data(str(price_paid_path), postcode_district_lookup, str(processed_price_paid_dir))
 
 
 
@@ -264,6 +264,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
 
     classified = property_class(with_matches)
 
+    classified = property_class_no_match(classified)
 
     multi_tagged = tag_multi_property(classified)
 
