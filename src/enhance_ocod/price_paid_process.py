@@ -321,11 +321,32 @@ def preprocess_and_save_by_year(
     print(f"Preprocessing complete. Data saved to {output_dir}")
 
 
-def check_and_preprocess_if_needed(
+def check_and_preprocess_price_paid_data(
     raw_data_path, postcode_district_lookup, processed_dir="data/processed_price_paid"
 ):
-    """
-    Check if processed price paid data exists, if not run preprocessing
+    """Check if processed price paid data exists, and preprocess if needed.
+
+    This function checks whether processed price paid data already exists in the
+    specified directory. If the processed data is not found or the directory is
+    empty, it initiates the preprocessing pipeline. Otherwise, it skips the
+    preprocessing step to avoid redundant processing.
+
+    Parameters
+    ----------
+    raw_data_path : str or Path
+        Path to the raw price paid data file that needs to be processed.
+    postcode_district_lookup : dict or pandas.DataFrame
+        Lookup table/mapping for postcode districts used during preprocessing.
+    processed_dir : str or Path, optional
+        Directory path where processed data should be stored or checked for
+        existence. Default is "data/processed_price_paid".
+
+    Returns
+    -------
+    None
+        This function does not return any value. It either triggers preprocessing
+        or confirms that processed data already exists.
+
     """
     if not os.path.exists(processed_dir) or len(os.listdir(processed_dir)) == 0:
         print("Processed data not found. Starting preprocessing...")
@@ -366,7 +387,7 @@ def load_and_process_pricepaid_data(
     Loads the price paid data for the selected number of years. If no pre-processed data is available, it will pre-process then laod
     """
     # Check and preprocess if needed
-    check_and_preprocess_if_needed(file_path, postcode_district_lookup, processed_dir)
+    check_and_preprocess_price_paid_data(file_path, postcode_district_lookup, processed_dir)
 
     # Load only the years needed
     return load_years_data(years_needed, processed_dir)
