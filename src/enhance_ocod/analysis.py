@@ -75,7 +75,7 @@ def create_time_series_by_groups(msoa_dwellings, grouping_vars=None,
     Returns:
         pandas.DataFrame: Time series data with aggregated statistics
     """
-    ocod_path = Path('../data/ocod_history_processed')
+    ocod_path = Path(ocod_path)
     price_paid_path = Path(price_paid_path)
     results = []
 
@@ -157,37 +157,61 @@ def _calculate_aggregations(df, date, year, month, grouping_vars):
         # Fill NaN values with 0 for counts
         group_df['ocod_total_counts'] = group_df['ocod_total_counts'].fillna(0)
         group_df['dwellings'] = group_df['dwellings'].fillna(0)
+        
+        # Helper function
+        def safe_int(value):
+            return int(value) if pd.notna(value) and not np.isnan(value) else None
+        
         # Weighted by OCOD counts
-        ocod_weighted_mean = np.average(group_df['price_mean'], weights=group_df['ocod_total_counts'])
-        ocod_weighted_median = np.average(group_df['price_median'], weights=group_df['ocod_total_counts'])
+        if group_df['ocod_total_counts'].sum() > 0:
+            ocod_weighted_mean = np.average(group_df['price_mean'], weights=group_df['ocod_total_counts'])
+            ocod_weighted_median = np.average(group_df['price_median'], weights=group_df['ocod_total_counts'])
+        else:
+            ocod_weighted_mean = np.nan
+            ocod_weighted_median = np.nan
         
         # Weighted by dwelling counts
-        dwelling_weighted_mean = np.average(group_df['price_mean'], weights=group_df['dwellings'])
-        dwelling_weighted_median = np.average(group_df['price_median'], weights=group_df['dwellings'])
+        if group_df['dwellings'].sum() > 0:
+            dwelling_weighted_mean = np.average(group_df['price_mean'], weights=group_df['dwellings'])
+            dwelling_weighted_median = np.average(group_df['price_median'], weights=group_df['dwellings'])
+        else:
+            dwelling_weighted_mean = np.nan
+            dwelling_weighted_median = np.nan
         
         # Total counts and values
         total_ocod_counts = group_df['ocod_total_counts'].sum()
         total_dwelling_count = group_df['dwellings'].sum()
         
-        total_value_ocod_mean = total_ocod_counts * ocod_weighted_mean
-        total_value_dwelling_mean = total_dwelling_count * dwelling_weighted_mean
+        # Handle NaN in calculations
+        if pd.notna(ocod_weighted_mean):
+            total_value_ocod_mean = total_ocod_counts * ocod_weighted_mean
+        else:
+            total_value_ocod_mean = np.nan
+            
+        if pd.notna(dwelling_weighted_mean):
+            total_value_dwelling_mean = total_dwelling_count * dwelling_weighted_mean
+        else:
+            total_value_dwelling_mean = np.nan
         
         # Fraction of total value
-        fraction_of_total_value = total_value_ocod_mean / total_value_dwelling_mean if total_value_dwelling_mean > 0 else np.nan
+        if pd.notna(total_value_ocod_mean) and pd.notna(total_value_dwelling_mean) and total_value_dwelling_mean > 0:
+            fraction_of_total_value = total_value_ocod_mean / total_value_dwelling_mean
+        else:
+            fraction_of_total_value = np.nan
         
         result = {
             'date': date,
             'year': year,
             'month': month,
-            'ocod_mean': int(ocod_weighted_mean),
-            'ocod_median': int(ocod_weighted_median),
-            'dwelling_mean': int(dwelling_weighted_mean),
-            'dwelling_median': int(dwelling_weighted_median),
-            'ocod_ratio_mean': ocod_weighted_mean / dwelling_weighted_mean if dwelling_weighted_mean > 0 else np.nan,
+            'ocod_mean': safe_int(ocod_weighted_mean),
+            'ocod_median': safe_int(ocod_weighted_median),
+            'dwelling_mean': safe_int(dwelling_weighted_mean),
+            'dwelling_median': safe_int(dwelling_weighted_median),
+            'ocod_ratio_mean': ocod_weighted_mean / dwelling_weighted_mean if pd.notna(dwelling_weighted_mean) and dwelling_weighted_mean > 0 else np.nan,
             'ocod_total_counts': int(total_ocod_counts),
             'total_dwelling_count': int(total_dwelling_count),
-            'total_value_ocod_mean': int(total_value_ocod_mean),
-            'total_value_dwelling_mean': int(total_value_dwelling_mean),
+            'total_value_ocod_mean': safe_int(total_value_ocod_mean),
+            'total_value_dwelling_mean': safe_int(total_value_dwelling_mean),
             'fraction_of_total_value': fraction_of_total_value
         }
         
