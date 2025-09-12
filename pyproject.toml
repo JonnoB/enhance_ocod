@@ -11,7 +11,7 @@ version = "0.1.0"
 authors = [
     {name = "Jonathan Bourne"},
 ]
-description = "A package for enhancing and processing OCOD (Overseas companies that own property in England and Wales ) dataset"
+description = "A package for working with the OCOD (Overseas companies that own property in England and Wales ) dataset"
 readme = "README.md"
 requires-python = ">=3.6"
 dependencies = [
@@ -25,11 +25,25 @@ dependencies = [
     "torch",
     "tqdm",
 ]
+
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
 license = {text = "MIT"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v"
+
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/JonnoB/enhance_ocod"

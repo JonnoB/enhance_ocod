@@ -14,8 +14,6 @@ It performs the following steps:
    - Downloads the file using the pre-signed URL (no Authorization header).
    - Saves the file to the output directory.
 
-The script uses a progress bar for download status and provides clear logging for errors and skipped files.
-It is designed to be robust against network errors and to avoid redundant downloads.
 
 Environment variable required:
     LANDREGISTRY_API: The API key for authenticating with the Land Registry API.

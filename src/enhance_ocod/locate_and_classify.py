@@ -5,95 +5,7 @@ import time
 import zipfile
 import pandas as pd
 import numpy as np
-
-
-def expand_multi_id(multi_id_string):
-    # the function takes a string that is in the form '\d+(\s)?(-|to)(\s)?\d+'
-    # and outputs a continguous list of numbers between the two numbers in the string
-    multi_id_list = [int(x) for x in re.findall(r"\d+", multi_id_string)]
-    # min and max has to be used becuase somtimes the numbers are in descending order 4-3... I don't know why someone would do that
-    out = list(range(min(multi_id_list), max(multi_id_list) + 1))
-    return out
-
-
-def filter_contiguous_numbers(number_list, number_filter):
-    # this function filters a list of contiguous house numbers/unit_id's to be even, odd, or unchanged
-    # it takes as an argument a list of integers and a filter condition.
-    # these values are contained in the label dictionary and reformated dataframe
-    # The function ouputs the correct list of integers according to the filter condition
-
-    if number_filter == "odd":
-        out = [x for x in number_list if x % 2 == 1]
-    elif number_filter == "even":
-        out = [x for x in number_list if x % 2 == 0]
-    else:
-        out = number_list
-    return out
-
-
-# the loop iks quite fast considering the rest of the process so I am not sure printing is necessary anymore
-# However, I want to keep it just in case so set the default to a very large numebr.
-def expand_dataframe_numbers(df2, column_name, print_every=1000, min_count=1):
-    # cycles through the dataframe and and expands xx-to-yy formats printing every ith iteration
-    temp_list = []
-    expand_time = 0
-    filter_time = 0
-    make_dataframe_time = 0
-
-    for i in range(0, df2.shape[0]):
-        start_expand_time = time.time()
-        numbers_list = expand_multi_id(df2.loc[i][column_name])
-        end_expand_time = time.time()
-
-        numbers_list = filter_contiguous_numbers(
-            numbers_list, df2.loc[i]["number_filter"]
-        )
-
-        end_filter_time = time.time()
-
-        dataframe_len = len(numbers_list)
-
-        # This prevents large properties counting as several properties
-        if dataframe_len > min_count:
-            tmp = pd.concat(
-                [df2.iloc[i].to_frame().T] * dataframe_len, ignore_index=True
-            )
-
-            tmp[column_name] = numbers_list
-        else:
-            tmp = df2.iloc[i].to_frame().T
-
-        temp_list.append(tmp)
-        end_make_dataframe_time = time.time()
-
-        expand_time = expand_time + (end_expand_time - start_expand_time)
-        filter_time = filter_time + (end_filter_time - end_expand_time)
-        make_dataframe_time = make_dataframe_time + (
-            end_make_dataframe_time - end_filter_time
-        )
-
-        if (i > 0) & (i % print_every == 0):
-            print(
-                "i=",
-                i,
-                " expand time,"
-                + str(round(expand_time, 3))
-                + " filter time"
-                + str(round(filter_time, 3))
-                + " make_dataframe_time "
-                + str(round(make_dataframe_time, 3)),
-            )
-
-    # once all the lines have been expanded concatenate them into a single dataframe
-
-    out = pd.concat(temp_list)
-    out = out.astype({column_name: "string"})
-    # The data type coming into the function is a string as it is in the form xx-yy
-    # It needs to return a string as well otherwise there will be a pandas columns of mixed types
-    # ehich causes problems later on
-    out.loc[:, column_name] = out.loc[:, column_name].astype(str)
-
-    return out
+from .labelling.ner_regex import xx_to_yy_regex
 
 
 def load_postcode_district_lookup(file_path, target_post_area=None):
@@ -168,104 +80,6 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
     return postcode_district_lookup
 
 
-def preprocess_expanded_ocod_data(ocod_data, postcode_district_lookup):
-
-    ##add in the geographic area data like lsoa etc
-    ocod_data["postcode2"] = (
-        ocod_data["postcode"].str.lower().str.replace("\s", "", regex=True)
-    )
-
-    ocod_data = ocod_data.merge(
-        postcode_district_lookup, "left", left_on="postcode2", right_on="postcode2"
-    )
-
-    ocod_data["street_name"] = ocod_data["street_name"].str.replace(
-        r"^ +| +$", r"", regex=True
-    )
-    # this is to ensure that the street number includes only digits as it is used in the LSOA matching where the only thing
-    # that matters is the street number not whether it is a or b or whatever.
-    ocod_data["street_number2"] = (
-        ocod_data["street_number"]
-        .str.replace(r"^.*(?=\b[0-9]+$)", "", regex=True)
-        .str.replace(r"[^\d]", "", regex=True)
-    )
-
-    # This stripped out versionof street name is used several times throughout the notebook
-    ocod_data["street_name2"] = (
-        ocod_data.loc[:, "street_name"]
-        .str.replace(r"'", "", regex=True)
-        .str.replace(r"s(s)?(?=\s)", "", regex=True)
-        .str.replace(r"\s", "", regex=True)
-    )
-
-    return ocod_data
-
-
-def add_missing_lads_ocod(ocod_data, price_paid_df):
-    """
-    Add missing LAD (Local Authority District) codes to OCOD data.
-    
-    Not all observations have a postcode and some postcodes are erroneous or 
-    otherwise cannot be found in the postcode database. This function finds 
-    these entries and adds valid district codes by creating a lookup table 
-    from the price paid data.
-    
-    Args:
-        ocod_data (pandas.DataFrame): The OCOD dataset that may contain missing 
-            LAD codes in the 'lad11cd' column.
-        price_paid_df (pandas.DataFrame): Reference dataset containing valid 
-            'district' and 'lad11cd' mappings used to fill missing values.
-            
-    Returns:
-        pandas.DataFrame: The OCOD dataset with missing LAD codes filled in 
-            where possible based on district mappings from the price paid data.
-            
-    Notes:
-        When multiple LAD codes exist for the same district in the reference 
-        data, the function selects the LAD code with the highest frequency 
-        (most common occurrence).
-        
-    Examples:
-        >>> ocod_with_lads = add_missing_lads_ocod(ocod_data, price_paid_data)
-    """
-
-    # when there are multiples take the lad11cd with the largest number of counts
-    lad_lookup = (
-        price_paid_df[["district", "lad11cd"]]
-        .dropna()
-        .groupby(["district", "lad11cd"])
-        .size()
-        .reset_index()
-    )
-    lad_lookup.rename(columns={0: "counts"}, inplace=True)
-    lad_lookup = (
-        lad_lookup.sort_values("counts", ascending=False)
-        .groupby("lad11cd")
-        .first()
-        .reset_index()
-    )
-    lad_lookup.drop("counts", axis=1, inplace=True)
-
-    temp = ocod_data
-
-    # only take data that is missing the lad code. If you include only is missing postcode, bad postcode entries also get excluded leaving a small number of
-    ## blanks in the final dataset
-    temp = temp[temp["lad11cd"].isna()]
-
-    temp = temp.drop("lad11cd", axis=1)
-
-    temp = temp.merge(lad_lookup, left_on="district", right_on="district")
-
-    temp[
-        "lad11cd"
-    ].isna().sum()  # there are no na values showing all districts now have a lad code
-
-    # join the ocod data back together again
-    ocod_data = pd.concat([temp, ocod_data[~ocod_data["lad11cd"].isna()]])
-
-    return ocod_data
-
-
 def clean_street_numbers(df, original_column="number_or_name"):
     """
     Optimized version with fewer pandas operations and better vectorization
@@ -307,124 +121,6 @@ def clean_street_numbers(df, original_column="number_or_name"):
 
 
 ##street matching
-
-
-def create_lad_streetname2(df, target_lad, street_column_name):
-    #
-    # used to generalise the cleaning in the street matching process
-    # Creates a column called streetname 2 for a single lad.
-    # this function has been largely replaced as voa and ocod datasets have street name 2
-    # created on loading.
-    # filters to a single LAD
-    temp = df.loc[(df["lad11cd"] == target_lad)].copy(deep=True)
-
-    temp.loc[:, "street_name2"] = temp[street_column_name].copy(deep=True)
-    # clean street names of common matching errors
-    # remove apostraphe's
-    # remove trailing 's'
-    # remove all spaces
-    temp.loc[:, "street_name2"] = (
-        temp.loc[:, "street_name2"]
-        .str.replace(r"'", "", regex=True)
-        .str.replace(r"s(s)?(?=\s)", "", regex=True)
-        .str.replace(r"\s", "", regex=True)
-    )
-
-    return temp
-
-
-def massaged_address_match(ocod_data, voa_data, target_lad):
-    # Matches addresses betweeen the voa and ocod dataet
-
-    ocod_data_road = ocod_data.loc[(ocod_data["lad11cd"] == target_lad)].copy(deep=True)
-
-    LAD_biz = voa_data.loc[(voa_data["lad11cd"] == target_lad)].copy(deep=True)
-
-    # replace nan values to prevent crash
-    ocod_data_road.loc[ocod_data_road.street_name.isna(), "street_name2"] = (
-        "xxxstreet name missingxxx"
-    )
-
-    # the roads which match
-    ocod_data_road["street_match"] = ocod_data_road["street_name2"].isin(
-        LAD_biz.street_name2.unique()
-    )
-
-    # remove irrelevant streets
-    LAD_biz = LAD_biz[
-        LAD_biz["street_name2"].isin(ocod_data_road["street_name2"].unique())
-        & LAD_biz["street_name2"].notna()
-    ]
-    # create the database table
-    all_street_addresses = (
-        create_all_street_addresses(LAD_biz, target_lad)
-        .drop_duplicates(subset=["street_name2", "street_number"])
-        .rename(columns={"street_number": "street_number2"})
-    )
-
-    # prevents matching errors caused by some arcance and horrible thing
-    all_street_addresses["street_number2"] = all_street_addresses[
-        "street_number2"
-    ].astype("str")
-    all_street_addresses["street_number2"] = all_street_addresses[
-        "street_number2"
-    ].str.strip()
-
-    ocod_data_road["street_number2"] = ocod_data_road["street_number2"].astype("str")
-    ocod_data_road["street_number2"] = ocod_data_road["street_number2"].str.strip()
-
-    # pre-make the new column and assign nan to all values. THis might make things a bit faster
-    ocod_data_road["address_match"] = np.nan
-
-    ocod_data_road = ocod_data_road.merge(
-        all_street_addresses, how="left", on=["street_name2", "street_number2"]
-    )
-
-    ocod_data_road["address_match"] = ocod_data_road["business_address"].notna()
-
-    ocod_data_road.loc[
-        ocod_data_road["street_name2"] == "xxxstreet name missingxxx", "street_name2"
-    ] = np.nan
-
-    return ocod_data_road
-
-
-def find_filter_type(street_num):
-    # gets the highest street number and uses it to work out if the property is on the odd or even side of the street, or if that rule is ignore and it is all numbers
-    values = [int(x) for x in street_num.replace("-", " ").split() if x.strip()]
-    if (max(values) % 2 == 0) & (min(values) % 2 == 0):
-        out = "even"
-    elif (max(values) % 2 == 1) & (min(values) % 2 == 1):
-        out = "odd"
-    else:
-        out = "all"
-
-    return out
-
-
-def street_number_to_lsoa(temp_road, target_number):
-    # this is a helper function that finds the nearest building with known lsoa.
-    # It is sensitive to odd/even as in the UK that determins the side of the road
-    # and in terms of boundaries can define a border.
-    # this makes sure the data looks on the correct side of the road, as the boundary is liekly to fall down the middle of the road
-    modulo_2 = target_number % 2
-
-    sub_road = temp_road[(pd.to_numeric(temp_road["street_number2"]) % 2 == modulo_2)]
-
-    # It is not a given that there are odds and even's on a road. in that case just use the numbers you can find
-    if len(sub_road) > 0:
-        diff_array = np.abs(pd.to_numeric(sub_road["street_number2"]) - target_number)
-
-        # in the case there is more than 1 just take the first and give me a break
-        out = sub_road.iloc[np.where(diff_array == diff_array.min())].iloc[0, 2]
-    else:
-        diff_array = np.abs(pd.to_numeric(temp_road["street_number2"]) - target_number)
-
-        # in the case there is more than 1 just take the first and give me a break
-        out = temp_road.iloc[np.where(diff_array == diff_array.min())].iloc[0, 2]
-
-    return out
-
 
 def load_voa_ratinglist(file_path, postcode_district_lookup):
     """
@@ -546,354 +242,6 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
 
     return voa_businesses
 
-
-def street_and_building_matching(ocod_data, price_paid_df, voa_businesses):
-    """
-    Where there is no postcode properties are located using the building name or the street name
-
-    This process is quite convoluted and there is certainly a more efficient and pythonic way
-    however the order within each filling method is important to ensure that there are no duplicates
-    as this causes the OCOD dataset to grow with duplicates
-    """
-
-    # Replace the missing lsoa using street matching
-    temp_lsoa = pd.concat(
-        [
-            price_paid_df[["street_name2", "lad11cd", "lsoa11cd"]],
-            voa_businesses[["street_name2", "lad11cd", "lsoa11cd"]],
-        ]
-    ).dropna()
-
-    # Optimize the groupby operations
-    street_counts = (
-        temp_lsoa.groupby(["street_name2", "lad11cd", "lsoa11cd"])
-        .size()
-        .reset_index(name="temp_count")
-        .groupby(["street_name2", "lad11cd"])
-        .size()
-        .reset_index(name="counts")
-    )
-
-    temp = (
-        street_counts[street_counts["counts"] == 1]
-        .merge(temp_lsoa.drop_duplicates(), how="left", on=["street_name2", "lad11cd"])
-        .rename(columns={"lsoa11cd": "lsoa_street"})
-    )
-
-    ocod_data = ocod_data.merge(
-        temp[["lsoa_street", "street_name2", "lad11cd"]],
-        how="left",
-        on=["street_name2", "lad11cd"],
-    )
-
-    # Replace the missing lsoa using building matching
-    # Optimize regex operations by compiling patterns
-
-    digit_pattern = re.compile(r"\d+")
-    special_chars_pattern = re.compile(r"and|\&|-|,")
-    whitespace_pattern = re.compile(r"^ +| +$")
-
-    # Create building name processing function to avoid repetition
-    def clean_building_name(series):
-        return (
-            series.str.replace(digit_pattern, "", regex=True)
-            .str.replace(special_chars_pattern, "", regex=True)
-            .str.replace(whitespace_pattern, "", regex=True)
-        )
-
-    # Process building matching more efficiently
-    pp_temp = price_paid_df[["paon", "lad11cd", "oa11cd", "lsoa11cd"]].copy()
-    pp_temp["paon_clean"] = clean_building_name(pp_temp["paon"])
-    pp_temp = pp_temp[pp_temp["paon_clean"].str.len() > 0].drop_duplicates()
-
-    building_counts = (
-        pp_temp.groupby(["paon_clean", "lad11cd"]).size().reset_index(name="counts")
-    )
-
-    temp = (
-        building_counts[building_counts["counts"] == 1]
-        .merge(
-            pp_temp,
-            left_on=["paon_clean", "lad11cd"],
-            right_on=["paon_clean", "lad11cd"],
-            how="left",
-        )
-        .rename(
-            columns={
-                "lsoa11cd": "lsoa_building",
-                "oa11cd": "oa_building",
-                "paon_clean": "building_name",
-            }
-        )
-        .drop_duplicates(subset=["building_name", "lsoa_building"])
-    )
-
-    ocod_data = ocod_data.merge(
-        temp[["lsoa_building", "oa_building", "building_name", "lad11cd"]],
-        how="left",
-        on=["building_name", "lad11cd"],
-    )
-
-    # VOA businesses merge - filter and process in one step
-    voa_filtered = (
-        voa_businesses.loc[
-            ~voa_businesses["building_name"].isna(),
-            ["building_name", "oa11cd", "lsoa11cd", "lad11cd"],
-        ]
-        .drop_duplicates(subset=["building_name", "lsoa11cd"])
-        .rename(
-            columns={"lsoa11cd": "lsoa_busi_building", "oa11cd": "oa_busi_building"}
-        )
-    )
-
-    ocod_data = ocod_data.merge(
-        voa_filtered, how="left", on=["building_name", "lad11cd"]
-    )
-
-    # Fill in the lsoa11cd using the newly ID'd lsoa from the matching process
-    # Optimize the filling process using fillna with method chaining
-    lsoa_columns = ["lsoa_street", "lsoa_building", "lsoa_busi_building"]
-    oa_columns = ["oa_building", "oa_busi_building"]
-
-    # More efficient filling using combine_first
-    for col in lsoa_columns:
-        ocod_data["lsoa11cd"] = ocod_data["lsoa11cd"].combine_first(ocod_data[col])
-
-    for col in oa_columns:
-        ocod_data["oa11cd"] = ocod_data["oa11cd"].combine_first(ocod_data[col])
-
-    # Optimize nested properties processing - combine LSOA and OA processing
-    def process_nested_properties(ocod_data, code_col, new_col_name):
-        temp = (
-            ocod_data.loc[
-                (ocod_data[code_col].notnull()) & (ocod_data["within_larger_title"]),
-                [code_col, "title_number"],
-            ]
-            .drop_duplicates()
-            .groupby("title_number")[code_col]
-            .first()
-            .reset_index()
-            .rename(columns={code_col: new_col_name})
-        )
-
-        ocod_data = ocod_data.merge(temp, how="left", on="title_number")
-        ocod_data[code_col] = ocod_data[code_col].combine_first(ocod_data[new_col_name])
-        return ocod_data
-
-    # Process both LSOA and OA nested properties
-    ocod_data = process_nested_properties(ocod_data, "lsoa11cd", "lsoa_nested")
-    ocod_data = process_nested_properties(ocod_data, "oa11cd", "oa_nested")
-
-    return ocod_data
-
-
-def substreet_matching(
-    ocod_data, price_paid_df, voa_businesses, print_lads=False, print_every=100
-):
-    """
-    Some streets are on the boundary of LSOA this section uses the street number to match to the nearest lsoa.
-    """
-    # Pre-filter the data once
-    missing_lsoa_mask = (
-        ocod_data["street_name"].notnull()
-        & ocod_data["street_number"].notnull()
-        & ocod_data["lsoa11cd"].isnull()
-    )
-
-    if not missing_lsoa_mask.any():
-        return ocod_data
-
-    unique_lad_codes = ocod_data[missing_lsoa_mask]["lad11cd"].unique()
-
-    # Pre-process street numbers for all datasets once
-    ocod_subset = ocod_data[missing_lsoa_mask].copy()
-    ocod_subset["street_number2"] = extract_numeric_fast(ocod_subset["street_number"])
-
-    # Pre-process price_paid and voa data
-    price_paid_df = price_paid_df.copy()
-    price_paid_df["street_number2"] = extract_numeric_fast(
-        price_paid_df["street_number"]
-    )
-
-    voa_businesses = voa_businesses.copy()
-    voa_businesses["street_number2"] = extract_numeric_fast(
-        voa_businesses["street_number"]
-    )
-
-    # Combine reference data once
-    reference_data = pd.concat(
-        [
-            price_paid_df[
-                [
-                    "street_name2",
-                    "street_number",
-                    "street_number2",
-                    "lsoa11cd",
-                    "lad11cd",
-                ]
-            ],
-            voa_businesses[
-                [
-                    "street_name2",
-                    "street_number",
-                    "street_number2",
-                    "lsoa11cd",
-                    "lad11cd",
-                ]
-            ],
-        ]
-    ).dropna()
-
-    filled_lsoa_list = []
-
-    for i, target_lad in enumerate(unique_lad_codes, 1):
-        if print_lads:
-            print(target_lad)
-        if i % print_every == 0:
-            print(f"lad {i} of {len(unique_lad_codes)}")
-
-        # Vectorized LAD filtering
-        lad_mask_ocod = ocod_subset["lad11cd"] == target_lad
-        lad_mask_ref = reference_data["lad11cd"] == target_lad
-
-        missing_lsoa_df = ocod_subset[lad_mask_ocod].copy()
-        temp_lsoa_raw = reference_data[lad_mask_ref].copy()
-
-        if len(missing_lsoa_df) == 0 or len(temp_lsoa_raw) == 0:
-            continue
-
-        target_street_names = missing_lsoa_df["street_name2"].unique()
-
-        # Filter reference data to relevant streets
-        temp_lsoa = temp_lsoa_raw[
-            temp_lsoa_raw["street_name2"].isin(target_street_names)
-            & temp_lsoa_raw["street_number2"].notna()
-        ]
-
-        if len(temp_lsoa) == 0:
-            continue
-
-        temp_lsoa = create_all_street_addresses(
-            temp_lsoa, target_lad, ["street_name2", "street_number2", "lsoa11cd"]
-        )
-
-        # Process all streets at once using vectorized operations
-        result_df = process_streets_vectorized(
-            missing_lsoa_df, temp_lsoa, target_street_names
-        )
-
-        if len(result_df) > 0:
-            filled_lsoa_list.append(result_df)
-
-    # Combine results
-    if not filled_lsoa_list:
-        temp_lsoa = ocod_data[0:0]
-    else:
-        temp_lsoa = pd.concat(filled_lsoa_list, ignore_index=True)
-
-    # Rejoin data
-    if len(temp_lsoa) > 0:
-        ocod_data = pd.concat(
-            [
-                ocod_data[~ocod_data["unique_id"].isin(temp_lsoa["unique_id"])],
-                temp_lsoa,
-            ],
-            ignore_index=True,
-        )
-
-    # Handle nested addresses (optimized)
-    ocod_data = fill_nested_lsoa_vectorized(ocod_data)
-
-    return ocod_data
-
-
-def extract_numeric_fast(series):
-    """Fast numeric extraction using vectorized operations"""
-    # Use str.extract with regex to get the last number in the string
-    numeric_str = series.str.extract(r"(\d+)$")[0]
-    return pd.to_numeric(numeric_str, errors="coerce")
-
-
-def process_streets_vectorized(missing_lsoa_df, temp_lsoa, target_street_names):
-    """Vectorized processing of multiple streets"""
-    results = []
-
-    # Group reference data by street for faster lookup
-    temp_grouped = temp_lsoa.groupby("street_name2")
-
-    for target_road in target_street_names:
-        missing_road = missing_lsoa_df[
-            (missing_lsoa_df["street_name2"] == target_road)
-            & (missing_lsoa_df["street_number2"].notna())
-        ].copy()
-
-        if len(missing_road) == 0:
-            continue
-
-        if target_road in temp_grouped.groups:
-            temp_road = temp_grouped.get_group(target_road)
-
-            # Vectorized LSOA assignment
-            lsoa_values = find_nearest_lsoa_vectorized(
-                missing_road["street_number2"].values, temp_road
-            )
-
-            missing_road = missing_road.copy()
-            missing_road["lsoa11cd"] = lsoa_values
-            results.append(missing_road)
-
-    return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
-
-
-def find_nearest_lsoa_vectorized(target_numbers, temp_road):
-    """Vectorized version of street_number_to_lsoa logic"""
-    temp_numbers = temp_road["street_number2"].values
-    temp_lsoa = temp_road["lsoa11cd"].values
-
-    results = []
-
-    for target_num in target_numbers:
-        modulo_2 = int(target_num) % 2
-
-        # Find same parity numbers
-        same_parity_mask = (temp_numbers % 2) == modulo_2
-
-        if same_parity_mask.any():
-            # Use same parity numbers
-            candidates = temp_numbers[same_parity_mask]
-            candidate_lsoa = temp_lsoa[same_parity_mask]
-        else:
-            # Use all numbers
-            candidates = temp_numbers
-            candidate_lsoa = temp_lsoa
-
-        # Find nearest
-        diff_array = np.abs(candidates - target_num)
-        min_idx = np.argmin(diff_array)
-        results.append(candidate_lsoa[min_idx])
-
-    return results
-
-
-def fill_nested_lsoa_vectorized(ocod_data):
-    """Optimized nested LSOA filling"""
-    # Find titles with known LSOA
-    known_lsoa = ocod_data[
-        (ocod_data["lsoa11cd"].notna()) & (ocod_data["within_larger_title"])
-    ][["lsoa11cd", "title_number"]].drop_duplicates()
-
-    # Take first LSOA per title (handles multiple LSOA per title)
-    lsoa_map = known_lsoa.groupby("title_number")["lsoa11cd"].first()
-
-    # Map to missing values
-    missing_mask = ocod_data["lsoa11cd"].isna()
-    ocod_data.loc[missing_mask, "lsoa11cd"] = ocod_data.loc[
-        missing_mask, "title_number"
-    ].map(lsoa_map)
-
-    return ocod_data
-
-
 def counts_of_businesses_per_oa_lsoa(ocod_data, voa_businesses):
     """
     This function allows areas with no  businesses to automatically exclude business from the classification
@@ -917,207 +265,364 @@ def counts_of_businesses_per_oa_lsoa(ocod_data, voa_businesses):
     return ocod_data
 
 
-def voa_address_match_all_data(
-    ocod_data, voa_businesses, print_lads=False, print_every=50
-):
-    """
-    Vectorized version - processes all LADs at once instead of looping DOES NOT USE MASSAGED_DATA FUNCTION!
-    """
-    # Filter out NaN LADs upfront
-    valid_lads = ocod_data["lad11cd"].dropna().unique()
-    print(f"Processing {len(valid_lads)} LADs")
 
-    # Pre-filter both datasets to only valid LADs (avoids repeated filtering)
-    ocod_filtered = ocod_data[ocod_data["lad11cd"].isin(valid_lads)].copy()
-    voa_filtered = voa_businesses[voa_businesses["lad11cd"].isin(valid_lads)].copy()
 
-    # OPTIMIZATION 1: Handle missing street names once for entire dataset
-    ocod_filtered.loc[ocod_filtered["street_name"].isna(), "street_name2"] = (
-        "xxxstreet name missingxxx"
+def add_geographic_metadata(df, postcode_district_lookup):
+    """
+    Add geographic area data and create standardized address fields, for entries with a postcode.
+    
+    This function enriches address data by merging geographic area codes 
+    (LSOA, MSOA, LAD, etc.) based on postcode lookup, and creates 
+    standardized versions of street numbers and street names for 
+    improved data matching and consistency.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame containing address data with columns including 
+        'postcode', 'street_number', and 'street_name'.
+    postcode_district_lookup : pandas.DataFrame
+        Lookup table containing postcode to geographic area mappings
+        with 'postcode2' column for merging.
+    
+    Returns
+    -------
+    pandas.DataFrame
+        Enhanced DataFrame with additional columns:
+        - postcode2: Normalized postcode (lowercase, no spaces)
+        - Geographic area columns from the lookup table
+        - street_number2: Standardized street number (digits only)
+        - street_name2: Standardized street name (no apostrophes, 
+          's/ss' removed, no spaces)
+    
+    Notes
+    -----
+    The standardized street number extracts only digits for use in 
+    LSOA matching where apartment letters and other characters are 
+    not relevant.
+    """
+
+    ##add in the geographic area data like lsoa etc
+    df["postcode2"] = (
+        df["postcode"].str.lower().str.replace("\s", "", regex=True)
     )
 
-    # OPTIMIZATION 2: Create street match mapping once for all LADs
-    print("Creating street match lookup...")
-    street_matches = create_street_match_lookup(ocod_filtered, voa_filtered)
-    ocod_filtered["street_match"] = ocod_filtered["street_name2"].isin(street_matches)
-
-    # OPTIMIZATION 3: Create address lookup once for all relevant streets
-    print("Creating address lookup...")
-    all_street_addresses = create_vectorized_address_lookup(
-        voa_filtered, street_matches
+    df = df.merge(
+        postcode_district_lookup, "left", left_on="postcode2", right_on="postcode2"
     )
 
-    # OPTIMIZATION 4: Single merge operation instead of per-LAD merges
-    print("Performing address matching...")
-    ocod_filtered = perform_vectorized_address_match(
-        ocod_filtered, all_street_addresses
+    # this is to ensure that the street number includes only digits as it is used in the LSOA matching where the only thing
+    # that matters is the street number not whether it is a or b or whatever.
+    df["street_number2"] = (
+        df["street_number"]
+        .str.replace(r"^.*(?=\b[0-9]+$)", "", regex=True)
+        .str.replace(r"[^\d]", "", regex=True)
     )
 
-    # Clean up the placeholder
-    ocod_filtered.loc[
-        ocod_filtered["street_name2"] == "xxxstreet name missingxxx", "street_name2"
-    ] = np.nan
-
-    return ocod_filtered
-
-
-def create_street_match_lookup(ocod_data, voa_data):
-    """Create set of streets that exist in both datasets"""
-    ocod_streets = set(ocod_data["street_name2"].dropna())
-    voa_streets = set(voa_data["street_name2"].dropna())
-    return ocod_streets.intersection(voa_streets)
-
-
-def create_vectorized_address_lookup(voa_data, valid_streets):
-    """
-    Create address lookup table for all valid streets at once
-    """
-    # Filter to only streets that match between datasets
-    voa_relevant = voa_data[
-        voa_data["street_name2"].isin(valid_streets) & voa_data["street_name2"].notna()
-    ].copy()
-
-    if len(voa_relevant) == 0:
-        return pd.DataFrame(
-            columns=["street_name2", "street_number2", "business_address"]
-        )
-
-    # Process address expansion vectorized by LAD groups
-    lad_groups = []
-    for lad in voa_relevant["lad11cd"].unique():
-        lad_data = voa_relevant[voa_relevant["lad11cd"] == lad]
-        lad_addresses = create_all_street_addresses(lad_data, lad)
-        lad_groups.append(lad_addresses)
-
-    # Combine all and deduplicate
-    all_addresses = pd.concat(lad_groups, ignore_index=True)
-    return all_addresses.drop_duplicates(subset=["street_name2", "street_number2"])
-
-
-def perform_vectorized_address_match(ocod_data, all_street_addresses):
-    """
-    Perform the address matching in a single vectorized operation
-    """
-    # Ensure string types and strip whitespace
-    all_street_addresses["street_number2"] = (
-        all_street_addresses["street_number2"].astype("str").str.strip()
-    )
-    ocod_data["street_number2"] = ocod_data["street_number2"].astype("str").str.strip()
-
-    # Single merge operation
-    result = ocod_data.merge(
-        all_street_addresses, how="left", on=["street_name2", "street_number2"]
+    # This stripped out versionof street name is used several times throughout the notebook
+    df["street_name2"] = (
+        df.loc[:, "street_name"]
+        .str.replace(r"'", "", regex=True)
+        .str.replace(r"s(s)?(?=\s)", "", regex=True)
+        .str.replace(r"\s", "", regex=True)
     )
 
-    # Create address match flag
-    result["address_match"] = result["business_address"].notna()
-
-    return result
+    return df
 
 
-def create_all_street_addresses(
-    voa_businesses,
-    target_lad,
-    return_columns=["street_name2", "street_number", "business_address"],
-):
+def enhance_ocod_with_gazetteers(pre_process_ocod, building_gazetteer, district_gazetteer, street_gazetteer):
     """
-    Optimized version with minimal copying and better vectorization
+    Enhance OCOD data by adding missing geographic codes using gazetteers.
+    
+    This function fills in missing LAD codes using district information, and missing
+    LSOA codes using building and street gazetteers where appropriate.
+    
+    Parameters
+    ----------
+    pre_process_ocod : pandas.DataFrame
+        The OCOD dataset that may contain missing geographic codes
+    building_gazetteer : pandas.DataFrame
+        Building gazetteer with columns: building_name, oa11cd, lsoa11cd, msoa11cd, lad11cd, fraction
+    district_gazetteer : pandas.DataFrame
+        District gazetteer with columns: district, lad11cd
+    street_gazetteer : pandas.DataFrame
+        Street gazetteer with columns: street_name2, lsoa11cd, oa11cd, msoa11cd, lad11cd, fraction
+        
+    Returns
+    -------
+    pandas.DataFrame
+        Enhanced OCOD dataset with missing geographic codes filled where possible.
+        Includes 'match_prob' column with fraction values and 'geog_match' categorical column
+        indicating whether match was from 'building' or 'street' gazetteer.
+        
+    Notes
+    -----
+    - First adds missing LAD codes using district gazetteer
+    - Then adds missing LSOA codes using building gazetteer (where building_name and lad11cd match)
+    - Finally adds missing LSOA codes using street gazetteer (where street_name and lad11cd match)
+    - Only fills missing values, does not overwrite existing ones
+    - Geographic codes are added hierarchically (LAD first, then LSOA/OA/MSOA)
+    - Performs case-insensitive matching by converting to lowercase
+    - match_prob and geog_match columns track the source and quality of gazetteer matches
+        
+    Examples
+    --------
+    >>> enhanced_ocod = enhance_ocod_with_gazetteers(pre_process_ocod, 
+    ...                                             building_gaz, 
+    ...                                             district_gaz, 
+    ...                                             street_gaz)
     """
-    if len(voa_businesses) == 0:
-        return pd.DataFrame(
-            columns=["street_name2", "street_number2", "business_address"]
+    
+    # Create a copy to avoid modifying the original
+    enhanced_ocod = pre_process_ocod.copy()
+    
+    # Initialize new columns
+    enhanced_ocod['match_prob'] = float('nan')
+    enhanced_ocod['geog_match'] = None
+    
+    # Create lowercase versions of gazetteers for matching
+    building_gazetteer_lower = building_gazetteer.copy()
+    building_gazetteer_lower['building_name'] = building_gazetteer_lower['building_name'].str.lower()
+    
+    street_gazetteer_lower = street_gazetteer.copy()
+    street_gazetteer_lower['street_name2'] = street_gazetteer_lower['street_name2'].str.lower()
+    
+    # Step 1: Add missing LAD codes using district gazetteer
+    missing_lad_mask = enhanced_ocod['lad11cd'].isna()
+    
+    if missing_lad_mask.sum() > 0:
+        missing_lad_data = enhanced_ocod[missing_lad_mask].copy()
+        merged_districts = missing_lad_data.merge(
+            district_gazetteer[['district', 'lad11cd']], 
+            on='district', 
+            how='left', 
+            suffixes=('', '_new')
         )
-
-    # Work with the filtered data directly (no deep copy needed)
-    temp = voa_businesses.copy()  # Shallow copy is sufficient
-
-    # FIX: Proper boolean logic for filtering out problematic street numbers
-    has_dot = temp["street_number"].str.contains(r"\.", regex=True, na=False)
-    temp = temp[~has_dot]  # Remove rows with dots in street numbers
-
-    # Vectorized multi-address detection
-    temp["is_multi"] = temp["street_number"].str.contains(r"-", regex=True, na=False)
-
-    temp.rename(columns={"full_property_identifier": "business_address"}, inplace=True)
-
-    # Split processing
-    not_multi = temp[~temp["is_multi"]]
-    multi_addresses = temp[temp["is_multi"]]
-
-    results = []
-
-    # Add non-multi addresses
-    if len(not_multi) > 0:
-        results.append(
-            not_multi[return_columns].rename(
-                columns={"street_number": "street_number2"}
-            )
+        enhanced_ocod.loc[missing_lad_mask, 'lad11cd'] = merged_districts['lad11cd_new'].values
+    
+    # Step 2: Add missing LSOA codes using building gazetteer
+    missing_lsoa_mask = enhanced_ocod['lsoa11cd'].isna()
+    has_building_and_lad = (enhanced_ocod['building_name'].notna() & 
+                           enhanced_ocod['lad11cd'].notna())
+    building_fillable_mask = missing_lsoa_mask & has_building_and_lad
+    
+    if building_fillable_mask.sum() > 0:
+        building_data = enhanced_ocod[building_fillable_mask].copy()
+        merged_buildings = building_data.merge(
+            building_gazetteer_lower[['building_name', 'lad11cd', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'fraction']], 
+            on=['building_name', 'lad11cd'], 
+            how='left', 
+            suffixes=('', '_new')
         )
-
-    # Process multi addresses
-    if len(multi_addresses) > 0:
-        # Vectorized filter type detection
-        multi_addresses = multi_addresses.reset_index(drop=True)
-        filter_types = [find_filter_type(x) for x in multi_addresses["street_number"]]
-        multi_addresses["number_filter"] = filter_types
-
-        # Expand addresses
-        expanded = expand_dataframe_numbers(
-            multi_addresses, "street_number", print_every=10000, min_count=1
+        
+        # Update geographic codes and tracking columns where matches found
+        match_found_mask = merged_buildings['lsoa11cd_new'].notna()
+        if match_found_mask.sum() > 0:
+            building_indices = enhanced_ocod.index[building_fillable_mask][match_found_mask]
+            
+            for col in ['oa11cd', 'lsoa11cd', 'msoa11cd']:
+                enhanced_ocod.loc[building_indices, col] = merged_buildings.loc[match_found_mask, f'{col}_new'].values
+            
+            enhanced_ocod.loc[building_indices, 'match_prob'] = merged_buildings.loc[match_found_mask, 'fraction'].values
+            enhanced_ocod.loc[building_indices, 'geog_match'] = 'building'
+    
+    # Step 3: Add missing LSOA codes using street gazetteer
+    missing_lsoa_mask = enhanced_ocod['lsoa11cd'].isna()
+    has_street_and_lad = (enhanced_ocod['street_name2'].notna() & 
+                         enhanced_ocod['lad11cd'].notna())
+    street_fillable_mask = missing_lsoa_mask & has_street_and_lad
+    
+    if street_fillable_mask.sum() > 0:
+        street_data = enhanced_ocod[street_fillable_mask].copy()
+        merged_streets = street_data.merge(
+            street_gazetteer_lower[['street_name2', 'lad11cd', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'fraction']], 
+            on=['street_name2', 'lad11cd'], 
+            how='left', 
+            suffixes=('', '_new')
         )
-        results.append(
-            expanded[return_columns].rename(columns={"street_number": "street_number2"})
+        
+        # Update geographic codes and tracking columns where matches found
+        match_found_mask = merged_streets['lsoa11cd_new'].notna()
+        if match_found_mask.sum() > 0:
+            street_indices = enhanced_ocod.index[street_fillable_mask][match_found_mask]
+            
+            for col in ['oa11cd', 'lsoa11cd', 'msoa11cd']:
+                enhanced_ocod.loc[street_indices, col] = merged_streets.loc[match_found_mask, f'{col}_new'].values
+            
+            enhanced_ocod.loc[street_indices, 'match_prob'] = merged_streets.loc[match_found_mask, 'fraction'].values
+            enhanced_ocod.loc[street_indices, 'geog_match'] = 'street'
+    
+    # Convert geog_match to categorical for memory efficiency
+    enhanced_ocod['geog_match'] = enhanced_ocod['geog_match'].astype('category')
+    
+    return enhanced_ocod
+
+
+def add_business_matches(df, voa_businesses):
+    """Add boolean columns indicating business address matches.
+    
+    Performs address matching between a main dataframe and VOA business data
+    by comparing building names, street names, and street numbers within the
+    same Local Authority District (LAD). Creates three new boolean columns
+    to indicate successful matches at different address components.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Main dataframe containing address components (building_name, 
+        street_name2, street_number, lad11cd) to match against.
+    voa_businesses : pandas.DataFrame
+        VOA business dataframe containing reference address data with
+        the same address component columns for matching.
+    
+    Returns
+    -------
+    pandas.DataFrame
+        Copy of input dataframe with three additional boolean columns:
+        - building_match: True if building_name + lad11cd found in voa_businesses
+        - street_match: True if street_name2 + lad11cd found in voa_businesses  
+        - number_match: True if street_number + street_name2 + lad11cd found
+          in voa_businesses
+    
+    Notes
+    -----
+    - Only performs matching where required columns are not null
+    - Uses left joins to preserve all original records
+    - Returns a copy of the original dataframe, leaving input unchanged
+    - Matching is exact and case-sensitive
+    """
+    
+    # Create a copy to avoid modifying the original
+    enhanced_df = df.copy()
+    
+    # Initialize the new columns
+    enhanced_df['building_match'] = False
+    enhanced_df['street_match'] = False
+    enhanced_df['number_match'] = False
+    
+    # Building match
+    has_building_and_lad = (enhanced_df['building_name'].notna() & 
+                           enhanced_df['lad11cd'].notna())
+    
+    if has_building_and_lad.sum() > 0:
+        building_data = enhanced_df[has_building_and_lad].copy()
+        building_match_df = voa_businesses[['building_name', 'lad11cd']].dropna().drop_duplicates()
+        
+        merged_buildings = building_data.merge(
+            building_match_df, 
+            on=['building_name', 'lad11cd'], 
+            how='left', 
+            indicator='_building_merge'
         )
-
-    if results:
-        return pd.concat(results, ignore_index=True)
-    else:
-        return pd.DataFrame(
-            columns=["street_name2", "street_number2", "business_address"]
+        
+        match_found_mask = merged_buildings['_building_merge'] == 'both'
+        if match_found_mask.sum() > 0:
+            building_indices = enhanced_df.index[has_building_and_lad][match_found_mask]
+            enhanced_df.loc[building_indices, 'building_match'] = True
+    
+    # Street match
+    has_street_and_lad = (enhanced_df['street_name2'].notna() & 
+                         enhanced_df['lad11cd'].notna())
+    
+    if has_street_and_lad.sum() > 0:
+        street_data = enhanced_df[has_street_and_lad].copy()
+        street_match_df = voa_businesses[['street_name2', 'lad11cd']].dropna().drop_duplicates()
+        
+        merged_streets = street_data.merge(
+            street_match_df, 
+            on=['street_name2', 'lad11cd'], 
+            how='left', 
+            indicator='_street_merge'
         )
+        
+        match_found_mask = merged_streets['_street_merge'] == 'both'
+        if match_found_mask.sum() > 0:
+            street_indices = enhanced_df.index[has_street_and_lad][match_found_mask]
+            enhanced_df.loc[street_indices, 'street_match'] = True
+    
+    # Street number match
+    has_number_street_and_lad = (enhanced_df['street_number'].notna() & 
+                                enhanced_df['street_name2'].notna() & 
+                                enhanced_df['lad11cd'].notna())
+    
+    if has_number_street_and_lad.sum() > 0:
+        number_data = enhanced_df[has_number_street_and_lad].copy()
+        number_match_df = voa_businesses[['street_number', 'street_name2', 'lad11cd']].dropna().drop_duplicates()
+        
+        merged_numbers = number_data.merge(
+            number_match_df, 
+            on=['street_number', 'street_name2', 'lad11cd'], 
+            how='left', 
+            indicator='_number_merge'
+        )
+        
+        match_found_mask = merged_numbers['_number_merge'] == 'both'
+        if match_found_mask.sum() > 0:
+            number_indices = enhanced_df.index[has_number_street_and_lad][match_found_mask]
+            enhanced_df.loc[number_indices, 'number_match'] = True
+    
+    return enhanced_df
 
 
-#
-# Capture groups were used in this function previously. These have now been removed or replaced with non capture groups "(?:)"
-#
-def classification_type1(ocod_data):
-    ocod_data["class"] = np.select(
+def property_class(df):
+    """
+    Create a hierarchical classification of property types using logical rules.
+    
+    Applies a series of pattern-matching conditions to classify properties into
+    categories such as land, carpark, airspace, residential, business, or unknown
+    based on property address patterns, building names, and matching indicators.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input dataframe containing property data to be classified.
+    
+    Returns
+    -------
+    pandas.DataFrame
+        Input dataframe with additional 'class' column containing the
+        property classification.
+    """
+
+    df["class"] = np.select(
         [
-            ocod_data["property_address"].str.contains(r"^(?:land|plot)", case=False),
-            ocod_data["property_address"].str.contains(
+            df["property_address"].str.contains(r"^(?:land|plot)", case=False),
+            df["property_address"].str.contains(
                 r"^(?:[a-z\s]*)(?:garage|parking(?:\s)?space|parking space|car park(?:ing)?)",
                 case=False,
             ),
-            ocod_data["property_address"].str.contains(
+            df["property_address"].str.contains(
                 r"^(?:the airspace|airspace)", case=False
             ),
-            ocod_data["property_address"].str.contains(
+            df["property_address"].str.contains(
                 r"penthouse|flat|apartment", case=False
             ),
-            ocod_data["address_match"],
-            ocod_data["property_address"].str.contains(
+            ~df["street_match"],# If there is no business on the street then it must be a residential
+            df["property_address"].str.contains(
                 r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|^store(?:s)?\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)",
                 case=False,
             ),
-            ocod_data["property_address"].str.contains(
+            df["property_address"].str.contains(
                 r"^[a-z\s']+\b(?:land(?:s)?|plot(?:s)?)\b", case=False
             ),  # land with words before it
-            ocod_data["building_name"].str.contains(
+            df["building_name"].str.contains(
                 r"\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)",
                 case=False,
                 na=False,
             ),  # pubs in various guises
-            ocod_data["oa_busi_building"].notnull(),  # a business building was matched
-            ocod_data["business_address"].notnull(),
-        ],
+            df['building_name'].notna() & df['street_number'].str.contains(xx_to_yy_regex, na=False)  & df['unit_id'].isna(), # A named building which crosses multiple street addresses but doesn't have sub-units is a business
+            df["building_match"],  # a business building was matched
+            df["number_match"], # The street and number of a business was matched
+         ],
         [
             "land",
             "carpark",
             "airspace",
             "residential",
-            "business",
+            "residential",
             "business",
             "land",
+            'business',
             "business",
             "business",
             "business",
@@ -1125,130 +630,37 @@ def classification_type1(ocod_data):
         default="unknown",
     )
 
-    # Fills out unknown class values using the known class values from the same title number
+    return df
 
-    temp_fill = (
-        ocod_data[
-            ~ocod_data["class"].isin(["unknown", "airspace", "carpark"])
-            & (ocod_data["within_larger_title"])
-        ]
-        .groupby(["title_number", "class"])
-        .size()
-        .reset_index()[["title_number", "class"]]
-        .drop_duplicates()
-    )
-
-    temp = ocod_data[
-        ocod_data["title_number"].isin(temp_fill["title_number"])
-        & (ocod_data["class"] == "unknown")
-        & (ocod_data["within_larger_title"])
-    ].copy()
-
-    temp.drop("class", axis=1, inplace=True)
-
-    temp = temp.merge(temp_fill, how="left", on="title_number")
-
-    ocod_data = pd.concat(
-        [temp, ocod_data[~ocod_data["unique_id"].isin(temp["unique_id"])]]
-    )
-
-    return ocod_data
-
-
-def classification_type2(ocod_data):
-    ocod_data["class2"] = np.select(
-        [
-            (ocod_data["class"] == "unknown")
-            & (
-                ocod_data.property_address.str.contains("^(?:the )?unit")
-                & ocod_data.property_address.str.contains("park", regex=True)
-            ),  # contains the word unit and park
-            (ocod_data["class"] == "unknown")
-            & (
-                ocod_data["business_counts"] == 0
-            ),  # if there are no businesses in the oa then it is a residential
-            (ocod_data["class"] == "unknown")
-            & (
-                ocod_data["lsoa_business_counts"] == 0
-            ),  # if there are no businesses in the lsoa then it is a residential
-            (ocod_data["class"] == "unknown")
-            & (ocod_data["street_match"])
-            & (ocod_data["street_name"].notnull())
-            & (ocod_data["street_number"].notnull()),
-            (ocod_data["class"] == "unknown")
-            & (~ocod_data["street_match"]).fillna(False)
-            & (ocod_data["street_name"].notnull()),
-            (ocod_data["class"] == "unknown") & (ocod_data["building_name"].notnull()),
-        ],
-        [
-            "business",
-            "residential",
-            "residential",
-            "residential",
-            "residential",
-            "residential",
-        ],
-        default=ocod_data["class"],
-    )
-
-    # fillout larger titles that are now partially tagged
-
-    temp_fill = (
-        ocod_data[
-            ~ocod_data["class2"].isin(["unknown", "airspace", "carpark"])
-            & (ocod_data["within_larger_title"])
-        ]
-        .groupby(["title_number", "class2"])
-        .size()
-        .reset_index()[["title_number", "class2"]]
-        .drop_duplicates()
-    )
-
-    temp = ocod_data[
-        ocod_data["title_number"].isin(temp_fill["title_number"])
-        & (ocod_data["class2"] == "unknown")
-        & (ocod_data["within_larger_title"])
-    ].copy()
-
-    temp.drop("class2", axis=1, inplace=True)
-
-    temp = temp.merge(temp_fill, how="left", on="title_number")
-
-    ocod_data = pd.concat(
-        [temp, ocod_data[~ocod_data["unique_id"].isin(temp["unique_id"])]]
-    )
-
-    return ocod_data
-
-
-def contract_ocod_after_classification(
-    ocod_data, class_type="class2", classes=["residential"]
-):
+def property_class_no_match(df):
     """
-    This function removes mutli-addresses where they are not necessary. This is becuase only residential properties should be classed as
-    multiples. However, in some cases including unknown's may be of interest.
-
-    The function takes as inputs
-    ocod_data the ocod dataset as a pandas dataframe after classification by the classification functions
-    class_type: A string either class or class2. The default is 'class2'
-    classes: a list of strings naming the classes which WILL have multi-addresses, the default is 'doemstic' only
+    Perform additional property classification for previously unmatched properties.
+    
+    A more permissive classification approach that treats unmatched addresses
+    with street numbers as residential properties when they don't match known
+    business addresses but do match street patterns. This represents an upper
+    bound estimate for residential property counts.
+    
+    Note: This function should be run after property_class() has been applied.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input dataframe that has already been processed by property_class().
+    
+    Returns
+    -------
+    pandas.DataFrame
+        Input dataframe with additional 'class_no_match' column containing
+        the updated property classification.
     """
-
-    temp = ocod_data[~ocod_data[class_type].isin(classes)]
-
-    ocod_data = pd.concat(
-        [
-            ocod_data[ocod_data[class_type].isin(classes)],
-            temp.drop_duplicates(subset="title_number"),
-        ]
-    ).sort_values(by="unique_id")
-
-    # when the unit type is a carparking space but the class is residential it means that the address is a residential property that explicitly mentions a car park
-    ocod_data = ocod_data[
-        ~(
-            ocod_data["unit_type"].str.contains(r"park|garage")
-            & (ocod_data["class"] == "residential")
-        )
-    ]
-
-    return ocod_data
+    df["class_no_match"] = np.where(
+        (df["class"] == "unknown") & 
+        (~df["number_match"]) & 
+        df["street_match"] & 
+        df['street_number'].notna(),
+        "residential",
+        df["class"]
+    )
+    
+    return df

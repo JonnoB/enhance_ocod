@@ -1,83 +1,82 @@
 """
-OCOD Dataset Enhancement and Processing Pipeline
+OCOD Dataset Enhancement and Processing Pipeline.
 
-This script processes the OCOD (Overseas Companies that Own Property in England and Wales)
-historical dataset files through a comprehensive enhancement pipeline that includes address
-parsing, geolocation, and property classification.
+This script processes the OCOD (Overseas Companies that Own Property in England 
+and Wales) historical dataset. The process creates a tabular dataset where each 
+row represents a single address and classifies each property as residential, 
+business, airspace, parking, land, or other.
+
+The first time this script runs can take significantly longer as support metadata 
+is created and NER is performed on the OCOD datasets. However, subsequent runs 
+will be much quicker as the pre-processed data such as NER outputs and gazetteers 
+are re-used.
+
+With re-use, one OCOD dataset takes less than half a minute to process and uses 
+less than 10 GB of memory.
 
 About OCOD Dataset:
-The OCOD dataset contains information about properties in England and Wales that are owned
-by overseas companies. This data is published by HM Land Registry and includes company
-details, property addresses, and ownership information.
-
-Processing Pipeline:
-1. **Address Parsing**: Uses a trained NLP model to parse and standardize property addresses
-   from the raw address strings, extracting structured components like building numbers,
-   street names, localities, and postcodes.
-
-2. **Geolocation**: Enhances addresses with geographic information by:
-   - Matching postcodes to administrative boundaries using ONSPD data
-   - Adding Local Authority District (LAD) codes and other geographic identifiers
-   - Cross-referencing with price paid data for additional location context
-
-3. **Address Matching**: Performs address matching against:
-   - HM Land Registry Price Paid data for property transaction history
-   - VOA (Valuation Office Agency) rating list for business classification
-   - Street-level and sub-street level matching algorithms
-
-4. **Property Classification**: Classifies properties based on:
-   - Business activity data from VOA rating lists
-   - Statistical analysis of business density per Output Area (OA) and Lower Super Output Area (LSOA)
-   - Property type and usage patterns
+    The OCOD dataset contains information about properties in England and Wales 
+    that are owned by overseas companies. This data is published by HM Land 
+    Registry and includes company details, property addresses, and ownership 
+    information.
 
 Input Files:
-- OCOD_FULL_*.zip: Historical OCOD dataset files from HM Land Registry
-- ONSPD_FEB_2025.zip: Ordnance Survey National Statistics Postcode Directory
-- price_paid_complete_may_2025.csv: HM Land Registry Price Paid dataset
-- 2023_non_domestic_rating_list_entries.zip: VOA non-domestic rating list
+    - OCOD_FULL_*.zip: Historical OCOD dataset files from HM Land Registry
+    - ONSPD_FEB_*.zip: Ordnance Survey National Statistics Postcode Directory
+    - price_paid_complete_*.csv: HM Land Registry Price Paid dataset
+    - 2023_non_domestic_rating_list_entries.zip: VOA non-domestic rating list
 
 Output:
-- Processed OCOD data saved as Parquet files with enhanced address information,
-  geographic identifiers, and property classifications
+    Processed OCOD data saved as Parquet files with enhanced address information,
+    geographic identifiers, and property classifications.
 
 Usage:
-Run this script to process all OCOD historical files in the input directory.
-The script will skip files that have already been processed (existing output files).
+    Run this script to process all OCOD historical files in the input directory.
+    The script will skip files that have already been processed (existing output 
+    files).
 
 Example:
     python ocod_processing_pipeline.py
 
-Note:
-This is a computationally intensive process that requires significant memory and processing
-time. 
+Requirements:
+    - torch
+    - pandas
+    - pathlib
+    - tqdm
+    - pickle
+
+Notes:
+    - Requires GPU support for optimal performance
+    - Creates intermediate files for caching parsed results
+    - Automatically generates gazetteers if not present
 """
 
-from enhance_ocod.inference import parse_addresses_pipeline, convert_to_entity_dataframe
+from enhance_ocod.inference import parse_addresses_pipeline
 from enhance_ocod.address_parsing import (
     load_and_prep_OCOD_data,
-    parsing_and_expansion_process,
-    post_process_expanded_data,
     load_postcode_district_lookup,
+    process_addresses,
+    expand_dataframe_numbers,
+    create_unique_id
 )
 from enhance_ocod.locate_and_classify import (
-    preprocess_expanded_ocod_data,
-    add_missing_lads_ocod,
     load_voa_ratinglist,
-    street_and_building_matching,
-    substreet_matching,
-    counts_of_businesses_per_oa_lsoa,
-    voa_address_match_all_data,
-    classification_type1,
-    classification_type2,
-    contract_ocod_after_classification,
-)
-from enhance_ocod.price_paid_process import load_and_process_pricepaid_data
+    counts_of_businesses_per_oa_lsoa, # Not currently used
+    add_geographic_metadata,
+    enhance_ocod_with_gazetteers,
+    add_business_matches,
+    property_class,
+    property_class_no_match
+    )
+
+from enhance_ocod.price_paid_process import check_and_preprocess_price_paid_data, gazetteer_generator
 from pathlib import Path
 from tqdm import tqdm
 import time
 import gc  # Add for memory management
 
 import pickle
+import pandas as pd
 
 
 import torch
@@ -93,7 +92,7 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 
 # ====== CONSTANT PATHS AND SETTINGS ======
 input_dir = SCRIPT_DIR.parent / "data" / "ocod_history"
-output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
+output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed_new"
 model_path = (
     SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
 )
@@ -117,9 +116,54 @@ output_dir.mkdir(parents=True, exist_ok=True)
 parsed_results_dir = SCRIPT_DIR.parent / "data" / "parsed_ocod_dicts"
 parsed_results_dir.mkdir(parents=True, exist_ok=True)
 
+print("Loading common reference data...")
+postcode_district_lookup = load_postcode_district_lookup(str(ONSPD_path))
+voa_businesses = load_voa_ratinglist(str(voa_path), postcode_district_lookup)
+
+check_and_preprocess_price_paid_data(str(price_paid_path), postcode_district_lookup, str(processed_price_paid_dir))
+
+
+##########################
+##
+## Load and sort out the gazetteers
+##
+############################
+
+# Define file paths
+gazetteer_dir = SCRIPT_DIR.parent / 'data'/ 'gazetteer' 
+building_file = gazetteer_dir / 'building_gazetteer.parquet'
+district_file = gazetteer_dir / 'district_gazetteer.parquet'
+street_file = gazetteer_dir / 'street_gazetteer.parquet'
+
+# Check if all three files exist
+if building_file.exists() and district_file.exists() and street_file.exists():
+    print("Loading existing gazetteer files...")
+    building_gazetteer = pd.read_parquet(building_file)
+    building_gazetteer['fraction'] = 1
+    district_gazetteer = pd.read_parquet(district_file)
+    street_gazetteer = pd.read_parquet(street_file)
+else:
+    print("One or more gazetteer files missing. Running gazetteer_generator...")
+    # Create directory if it doesn't exist
+    gazetteer_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Run the function
+    building_gazetteer, district_gazetteer, street_gazetteer = gazetteer_generator(
+        price_paid_folder='../data/processed_price_paid'
+    )
+    
+    # Add the fraction column
+    building_gazetteer['fraction'] = 1
+    
+    # Save the results
+    building_gazetteer.to_parquet(building_file)
+    district_gazetteer.to_parquet(district_file)
+    street_gazetteer.to_parquet(street_file)
+    print("Gazetteer files saved successfully!")
+
+
 # List of all zip files in input_dir
 #
-# TESTING!!! only 10 files!
 #
 all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])
 
@@ -127,11 +171,6 @@ all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])
 # test_indices = [0, 25, 50, 75]
 # all_files = [all_files[i] for i in test_indices if i < len(all_files)]
 print(f"Found {len(all_files)} OCOD history files.")
-
-# Load common data once (if these don't change between files)
-print("Loading common reference data...")
-postcode_district_lookup = load_postcode_district_lookup(str(ONSPD_path))
-voa_businesses = load_voa_ratinglist(str(voa_path), postcode_district_lookup)
 
 for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     out_name = zip_file.stem + ".parquet"
@@ -150,7 +189,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     ocod_data = load_and_prep_OCOD_data(str(zip_file))
 
     ###############
-    # Parse addresses
+    # Perform NER on addresses
     ###############
     if parsed_results_file.exists():
         print(f"Loading cached parsing results for {zip_file.name}...")
@@ -179,55 +218,71 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         with open(parsed_results_file, "wb") as f:
             pickle.dump(results, f)
 
-    # Continue with post-parsing processing
-    test = convert_to_entity_dataframe(results)
-    test = parsing_and_expansion_process(all_entities=test)
-    ocod_data = post_process_expanded_data(test, ocod_data)
 
-    # Clean up
-    del results, test
-    gc.collect()
+    #################v
+    #
+    # Process the NER dictionaries
+    #
+    ################
+    processed_addresses_df = process_addresses(results['results'])
 
-    ###############
-    # Geolocate
-    ###############
-    print(f"Geolocating {zip_file.name}...")
+    post_processed_data = processed_addresses_df.merge(
+        ocod_data, how="left", left_on="datapoint_id", right_index=True
+    )[
+            [
+                "title_number",
+                "tenure",
+                "unit_id",
+                "unit_type",
+                "number_filter",
+                "building_name",
+                "street_number",
+                "street_name",
+                "postcode",
+                "city",
+                "district",
+                "county",
+                "region",
+                "price_paid",
+                "property_address",
+                "country_incorporated",
+            ]
+        ]
 
-    ocod_data = preprocess_expanded_ocod_data(ocod_data, postcode_district_lookup)
+    #################v
+    #
+    # Add geographic information
+    #
+    ################   
 
-    price_paid_df = load_and_process_pricepaid_data(
-        file_path=str(price_paid_path),
-        processed_dir=processed_price_paid_dir,
-        postcode_district_lookup=postcode_district_lookup,
-        years_needed=[2024, 2023, 2022],
-    )
+    post_processed_data["postcode"] = post_processed_data["postcode"].str.upper()
 
-    ocod_data = add_missing_lads_ocod(ocod_data, price_paid_df)
-    ocod_data = street_and_building_matching(ocod_data, price_paid_df, voa_businesses)
-    ocod_data = substreet_matching(ocod_data, price_paid_df, voa_businesses)
+    pre_process_ocod = add_geographic_metadata(post_processed_data, postcode_district_lookup)
 
-    # Clean up price paid data
-    del price_paid_df
-    gc.collect()
+    # I should probably make a better way of doing this, having these changes here does not seem like a good idea
+    pre_process_ocod['building_name'] = pre_process_ocod['building_name'].str.lower()
+    pre_process_ocod['street_name2'] = pre_process_ocod['street_name2'].str.lower()
+    enhanced  =  enhance_ocod_with_gazetteers(pre_process_ocod, building_gazetteer, district_gazetteer, street_gazetteer)
 
-    ###########
-    # Classify
-    ###########
-    print(f"Classifying {zip_file.name}...")
-    ocod_data = counts_of_businesses_per_oa_lsoa(ocod_data, voa_businesses)
-    ocod_data = voa_address_match_all_data(ocod_data, voa_businesses)
+    with_matches = add_business_matches(enhanced, voa_businesses)
 
-    ocod_data = classification_type1(ocod_data)
-    ocod_data = classification_type2(ocod_data)
+    #################v
+    #
+    # Classify and expand the rows
+    #
+    ################   
 
-    ocod_data = contract_ocod_after_classification(
-        ocod_data, class_type="class2", classes=["residential"]
-    )
+    classified = property_class(with_matches)
+
+    classified = property_class_no_match(classified)
+
+    expanded_df = expand_dataframe_numbers(classified, class_var = 'class', print_every=10000, min_count=1)
+
+    expanded_df = create_unique_id(expanded_df)
 
     columns = [
         "title_number",
-        "within_title_id",
-        "within_larger_title",
+        "multi_id",
         "unique_id",
         "unit_id",
         "unit_type",
@@ -245,12 +300,11 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         "lad11cd",
         "country_incorporated",
         "class",
-        "class2",
+        "needs_expansion",
     ]
 
-    ocod_data = ocod_data.loc[:, columns].rename(
-        columns={"within_title_id": "nested_id", "within_larger_title": "nested_title"}
-    )
+
+    ocod_data = expanded_df.loc[:, columns]
     # Save results
     ocod_data.to_parquet(out_path)
     print(f"Saved processed data to {out_path}")

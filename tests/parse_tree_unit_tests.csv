@@ -1,0 +1,21 @@
+unit_type,unit_id,number_filter,building_name,street_number,street_name,postcode,city,datapoint_id
+,,,,33,high street,,London,1
+,,,,33-35,high street,,London,2
+,,,,33,high street,,London,3
+,,,,34,high street,,London,3
+,,,,35,high street,,London,3
+units,33-35,,,,high street,,London,4
+flat,33-35,,,,high street,,London,5
+,1,,Broadhall House,34-37,river road,sw15 8pt,London,6
+,7-10,,Broadhall House,34-37,river road,sw15 8pt,London,6
+,11-17,odd,Broadhall House,34-37,river road,sw15 8pt,London,6
+,1,,Broadhall House,34-37,river road,sw15 8pt,London,7
+,7-10,,Broadhall House,34-37,river road,sw15 8pt,London,7
+,11-17,odd,Broadhall House,34-37,river road,sw15 8pt,London,7
+,22-28,even,Broadhall House,34-37,river road,sw15 8pt,London,7
+Flats,36 - 40,even,climb house,,ascent street,se45 6pq,London,8
+Flats,42-44,,climb house,,ascent street,se45 6pq,London,8
+,1-5,,down buildings,,ascent street,se45 6pq,London,8
+Flats,36 - 40,even,climb house,,,,,9
+Flats,42-44,,climb house,,,,,9
+,1-5,,down buildings,,,,,9

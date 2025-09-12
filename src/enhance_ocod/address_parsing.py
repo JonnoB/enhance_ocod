@@ -3,9 +3,11 @@ import re
 import numpy as np
 import time
 import zipfile
-from typing import Optional, List, Callable
+from typing import Optional, List, Callable, Dict, Optional, Any
 import io
-# This  module is supposed to contain all the relevant functions for parsing the LabeledS json file
+from .labelling.ner_regex import xx_to_yy_regex
+
+# This  module is supposed to contain all the relevant functions for parsing the labeled json file
 
 
 def load_postcode_district_lookup(file_path, target_post_area=None):
@@ -71,6 +73,42 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
 ## Expanding the addresses
 ##
 
+def needs_expansion(df, class_var = 'class'):
+
+    """Identify rows that need expansion due to ranged street or unit identifiers.
+    
+    Identifies which rows in the dataframe need to be expanded to multiple rows
+    because they have street or unit id's of the form "34-41", "10-20", etc.
+    This is not the same as identifying whether a title contains multiple
+    properties, and this operation is performed by "tag_multi_property".
+    
+    Args:
+        df (pandas.DataFrame): Input dataframe to analyze.
+        class_var (str, optional): Column name containing property class
+            information. Defaults to 'class'.
+    
+    Returns:
+        pandas.DataFrame: Copy of input dataframe with additional 'needs_expansion'
+            boolean column indicating which rows need expansion.
+    
+    Note:
+        Only residential properties are considered for expansion. The function
+        checks for range patterns in 'unit_id' column, or 'street_number' 
+        column when 'unit_id' is missing.
+    """
+
+    df = df.copy()
+    
+    df['number_filter'] = df['number_filter'].fillna('none')
+    df['number_filter'] = df['number_filter'].astype(str)
+
+    residential_mask = df[class_var] == 'residential'
+    expansion_condition = (df['unit_id'].str.contains(xx_to_yy_regex, na=False) | 
+                    (df['unit_id'].isna() & df['street_number'].str.contains(xx_to_yy_regex, na=False)))
+
+    df['needs_expansion'] = np.where(residential_mask & expansion_condition, True, False)
+
+    return df
 
 def expand_multi_id(multi_id_string):
     # the function takes a string that is in the form '\d+(\s)?(-|to)(\s)?\d+'
@@ -96,25 +134,44 @@ def filter_contiguous_numbers(number_list, number_filter):
     return out
 
 
-def expand_dataframe_numbers(df2, column_name, print_every=1000, min_count=1):
-    # cycles through the dataframe and and expands xx-to-yy formats printing every ith iteration
-
+def expand_dataframe_numbers_core(df, column_name, print_every=1000, min_count=1):
+    """Expand number range formats in a dataframe column with performance monitoring.
+    
+    Processes each row in the dataframe to expand number ranges in the specified 
+    column from 'xx-to-yy' format into individual entries. Includes timing 
+    diagnostics and progress reporting.
+    
+    Args:
+        df (pandas.DataFrame): Input dataframe to process.
+        column_name (str): Name of the column containing number ranges to expand.
+        print_every (int, optional): Print progress every nth iteration. Defaults to 1000.
+        min_count (int, optional): Minimum count threshold for expansion logic. 
+            Defaults to 1.
+    
+    Returns:
+        pandas.DataFrame: Expanded dataframe with individual number entries and 
+            timing performance metrics logged to console.
+    
+    Note:
+        This function is typically called internally by expand_dataframe_numbers 
+        rather than used directly.
+    """
     # Handle empty dataframe case
-    if df2.shape[0] == 0:
-        return df2
+    if df.shape[0] == 0:
+        return df
 
     temp_list = []
     expand_time = 0
     filter_time = 0
     make_dataframe_time = 0
 
-    for i in range(0, df2.shape[0]):
+    for i in range(0, df.shape[0]):
         start_expand_time = time.time()
-        numbers_list = expand_multi_id(df2.loc[i][column_name])
+        numbers_list = expand_multi_id(df.loc[i][column_name])
         end_expand_time = time.time()
 
         numbers_list = filter_contiguous_numbers(
-            numbers_list, df2.loc[i]["number_filter"]
+            numbers_list, df.loc[i]["number_filter"]
         )
 
         end_filter_time = time.time()
@@ -124,12 +181,12 @@ def expand_dataframe_numbers(df2, column_name, print_every=1000, min_count=1):
         # This prevents large properties counting as several properties
         if dataframe_len > min_count:
             tmp = pd.concat(
-                [df2.iloc[i].to_frame().T] * dataframe_len, ignore_index=True
+                [df.iloc[i].to_frame().T] * dataframe_len, ignore_index=True
             )
 
             tmp[column_name] = numbers_list
         else:
-            tmp = df2.iloc[i].to_frame().T
+            tmp = df.iloc[i].to_frame().T
 
         temp_list.append(tmp)
         end_make_dataframe_time = time.time()
@@ -162,383 +219,85 @@ def expand_dataframe_numbers(df2, column_name, print_every=1000, min_count=1):
 
     return out
 
-
-##
-##
-##
-##
-##
-##
-
-
-def identify_multi_addresses(all_entities):
+def expand_dataframe_numbers(df, class_var = 'class', print_every=1000, min_count=1):
+    """Expand number ranges in dataframe based on unit_id availability and expansion flags.
+    
+    Conditionally expands number ranges in either unit_id or street_number columns 
+    depending on data availability and expansion requirements. Processes rows marked 
+    for expansion while preserving non-expansion rows unchanged.
+    
+    Args:
+        df (pandas.DataFrame): Input dataframe with expansion flags and number data.
+        column_name (str): Primary column name for number range expansion.
+        print_every (int, optional): Progress reporting interval. Defaults to 1000.
+        min_count (int, optional): Minimum count threshold for expansion. Defaults to 1.
+    
+    Returns:
+        pandas.DataFrame: Combined dataframe with expanded number ranges and 
+            unchanged non-expansion rows, reset with continuous index.
     """
-    An important part of the parsing process is knowing which addresses represent multiple properties.
-    This function takes the all entities dataframe and returns three lists containing the indexes of
-    the nested properties.
-    multi_unit_id: The multi properties are units not entire properties aka flats
-    multi_property: The properties are nested multiproperties but are not flats
-    all_multi_ids: the combination of both.
+
+    df = needs_expansion(df, class_var = class_var)
+
+    unit_expanded = expand_dataframe_numbers_core(
+        df.loc[df['unit_id'].notna() & df['needs_expansion']].reset_index(drop=True), 
+        column_name='unit_id', 
+        print_every=print_every, 
+        min_count=min_count
+    )
+
+    street_expanded = expand_dataframe_numbers_core(
+        df.loc[df['unit_id'].isna() & df['needs_expansion']].reset_index(drop=True), 
+        column_name='street_number', 
+        print_every=print_every, 
+        min_count=min_count
+    )
+
+    expanded_df = pd.concat([df.loc[~df['needs_expansion']], unit_expanded, street_expanded], ignore_index = True)
+
+    return expanded_df
+
+
+def create_unique_id(df):
     """
-
-    xx_to_yy_regex = r"^\d+\s?(?:-|to)\s?\d+$"
-
-    multi_check_df = all_entities[
-        [
-            "datapoint_id",
-            "text",
-        ]
-    ].drop_duplicates()
-    multi_check_df["comma_count"] = multi_check_df["text"].str.count(",")
-    multi_check_df["land"] = multi_check_df["text"].str.contains(
-        r"^(?:land|plot|airspace|car|parking)", case=False
-    )
-
-    multi_check_df["business"] = multi_check_df["text"].str.contains(
-        r"cinema|hotel|office|centre|\bpub|holiday\s?inn|travel\s?lodge|business|cafe|^shop| shop|restaurant|home|^stores?\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|works",
-        case=False,
-    )
-
-    temp_df = (
-        all_entities[["datapoint_id", "label"]]
-        .groupby(["datapoint_id", "label"])
-        .value_counts()
-        .to_frame(name="counts")
-        .reset_index()
-        .pivot(index="datapoint_id", columns="label", values="counts")
-        .fillna(0)
-    )
-
-    xx_to_yy_street_counts = (
-        all_entities["datapoint_id"][
-            all_entities["label_text"].str.contains(xx_to_yy_regex)
-            & (all_entities["label"] == "street_number")
-        ]
-        .to_frame(name="datapoint_id")
-        .groupby("datapoint_id")
-        .size()
-        .to_frame(name="xx_to_yy_street_counts")
-    )
-
-    xx_to_yy_unit_counts = (
-        all_entities["datapoint_id"][
-            all_entities["label_text"].str.contains(xx_to_yy_regex)
-            & (all_entities["label"] == "unit_id")
-        ]
-        .to_frame(name="datapoint_id")
-        .groupby("datapoint_id")
-        .size()
-        .to_frame(name="xx_to_yy_unit_counts")
-    )
-
-    multi_check_df = (
-        multi_check_df.merge(
-            temp_df, how="left", left_on="datapoint_id", right_index=True
+    Create unique identifiers for DataFrame rows grouped by title number.
+    
+    This function adds two new columns to the DataFrame:
+    - 'multi_id': Sequential number within each title_number group
+    - 'unique_id': Combination of title_number and multi_id
+    
+    Args:
+        df (pandas.DataFrame): Input DataFrame containing a 'title_number' column.
+    
+    Returns:
+        pandas.DataFrame: Modified DataFrame with added 'multi_id' and 'unique_id' columns.
+    
+    Example:
+        >>> df = pd.DataFrame({'title_number': [1, 1, 2, 2, 2]})
+        >>> result = create_unique_id(df)
+        >>> print(result[['title_number', 'multi_id', 'unique_id']])
+           title_number  multi_id unique_id
+        0             1         1       1-1
+        1             1         2       1-2
+        2             2         1       2-1
+        3             2         2       2-2
+        4             2         3       2-3
+    """
+    df['multi_id'] = df.groupby('title_number').cumcount() + 1
+    df['unique_id'] = [
+        str(x) + "-" + str(y)
+        for x, y in zip(
+            df["title_number"], df["multi_id"]
         )
-        .merge(
-            xx_to_yy_street_counts, how="left", left_on="datapoint_id", right_index=True
-        )
-        .merge(
-            xx_to_yy_unit_counts, how="left", left_on="datapoint_id", right_index=True
-        )
-        .fillna(0)
-    )
-
-    # Ensures the neccesary columns are present
-    required_columns = ["building_name", "unit_id", "street_number"]
-    for col in required_columns:
-        if col not in multi_check_df.columns:
-            multi_check_df[col] = 0
-
-    del xx_to_yy_street_counts
-    del xx_to_yy_unit_counts
-
-    # separate the classes using logical rules
-    multi_check_df["class"] = np.select(
-        [
-            multi_check_df["land"],  # Land/plot addresses are single properties
-            multi_check_df[
-                "business"
-            ],  # Business addresses are typically single properties
-            (multi_check_df["building_name"] == 1)
-            & (
-                multi_check_df["unit_id"] == 0
-            ),  # Single building name without units = single property
-            (multi_check_df["xx_to_yy_unit_counts"] > 0)
-            | (
-                multi_check_df["xx_to_yy_street_counts"] > 0
-            ),  # Range patterns in unit IDs = multiple units
-            multi_check_df["street_number"]
-            > 1,  # Multiple street numbers = multiple properties
-            multi_check_df["unit_id"] > 1,  # Multiple unit IDs = multiple units
-            (multi_check_df["street_number"] <= 1)
-            & (multi_check_df["xx_to_yy_street_counts"] == 0)
-            & (
-                multi_check_df["unit_id"] <= 1
-            ),  # Single street number, no ranges, single/no unit = single property
-        ],
-        [
-            "single",
-            "single",
-            "single",
-            "multi",
-            "multi",
-            "multi",
-            "single",
-        ],
-        default="unknown",  # Fallback for edge cases
-    )
-    # With the multiaddress dataframe created the required vectors can now be produced
-
-    multi_unit_id = set(
-        multi_check_df["datapoint_id"][
-            (multi_check_df["class"] == "multi") & (multi_check_df["unit_id"] > 0)
-        ].tolist()
-    )
-    multi_property = set(
-        multi_check_df["datapoint_id"][
-            (multi_check_df["class"] == "multi") & (multi_check_df["unit_id"] == 0)
-        ].tolist()
-    )
-    all_multi_ids = list(multi_unit_id) + list(multi_property)
-
-    return multi_unit_id, multi_property, all_multi_ids
-
-
-def spread_address_labels(df, all_multi_ids):
-    """
-    This function spreads the address dataframe so that each
-    label class is its own column
-    """
-    # Take only rows which contain multiple properties
-    temp_df = df[df.datapoint_id.isin(all_multi_ids)].copy()
-    
-    # Pivot with datapoint_id as index to preserve it
-    pivoted_df = temp_df.pivot_table(
-        index="datapoint_id", 
-        columns="label", 
-        values="label_text",
-        aggfunc='first'  # Handle duplicates if any
-    )
-    
-    # Reset index to make datapoint_id a column again
-    pivoted_df = pivoted_df.reset_index()
-    
-    # Add back the text column
-    pivoted_df = pivoted_df.merge(
-        temp_df[["datapoint_id", "text"]].drop_duplicates(),
-        on="datapoint_id",
-        how="left"
-    )
-    
-    return pivoted_df
-
-
-def add_backfill_blockers(df):
-    """
-    This places blockers in the spread address dataframe to prevent labels
-    being propergates back or forword when not logical.
-    As an example if a building is going to back fill up previous addresses it should not
-    back fill past another street as this is highly unlikely to be the same building
-
-    """
-
-    # This indexing should be done using loc
-    df.loc[df["street_name"].notnull(), "building_name"] = "block"
-    df.loc[df["street_name"].notnull(), "street_number"] = (
-        "block"  # for multi-flats inside a common building
-    )
-
-    # returns true if current number filter is null and the next row has street_number or unit id is not null
-    # prevents number filters propergsating back across roads and unit ids
-    number_filter_block = df["number_filter"].isnull() & (
-        df["street_number"].shift().notnull() | df["unit_id"].shift().notnull()
-    )
-    df.loc[number_filter_block, "number_filter"] = "block"
-
-    return df
-
-
-# This function has been significantly modified from the original
-def backfill_address_labels(df):
-    """
-    Backfilling adds address information in. However, street address should only be back filled for multi addresses.
-    I need to work out how to do flat, which may be before or after the unit ID
-    Also I don't think this is a very good way of doing it at all.
-    """
-
-    # Define column groups for different fill strategies
-    backfill_columns = [
-        "number_filter",
-        "building_name",
-        "street_number",
-        "postcode",
-        "street_name",
-        "city",
     ]
-    forward_fill_columns = ["unit_type"]
-
-    # Vectorized backfill - more efficient than loops
-    for col in backfill_columns:
-        if col in df.columns:
-            df[col] = df.groupby("datapoint_id")[col].transform(lambda x: x.bfill())
-
-    # Vectorized forward fill
-    for col in forward_fill_columns:
-        if col in df.columns:
-            df[col] = df.groupby("datapoint_id")[col].transform(lambda x: x.ffill())
-
+    
     return df
-
-
-def final_parsed_addresses(
-    df,
-    all_entities,
-    multi_property,
-    multi_unit_id,
-    all_multi_ids,
-    expand_addresses=True,
-):
-    """
-    This function creates the final parsed address dataframe.
-    It can either expand the multi-addresses in the format xx to yy or not.
-    This is because other address parsers are not designed to perform such and expansion
-    and so would make such a comparison unfair.
-    """
-    xx_to_yy_regex = r"^\d+\s?(?:-|to|\/)\s?\d+$"
-
-    expanded_street = df[
-        df.datapoint_id.isin(multi_property)
-        & df.street_number.str.contains(xx_to_yy_regex)
-    ].reset_index()
-    expanded_unit_id = df[
-        df.datapoint_id.isin(multi_unit_id) & df.unit_id.str.contains(xx_to_yy_regex)
-    ].reset_index()
-
-    # Generally expansion is required as it changes the format to 1 address per row
-    # N.B. not all expanded addresses are valid. Office blocks are 1 property but can cover multiple street addresses
-    # A matching and cleaning process is required to identify what should be expanded and what not
-    if expand_addresses:
-        expanded_street = expand_dataframe_numbers(
-            expanded_street, column_name="street_number"
-        )
-        expanded_unit_id = expand_dataframe_numbers(
-            expanded_unit_id, column_name="unit_id"
-        )
-
-    # unit id and street number that does does not have the xx to yy format and so has already been expanded by spreading and backfilling
-    expanded_street_simple = df[
-        df.datapoint_id.isin(multi_property)
-        & (~df.street_number.str.contains(xx_to_yy_regex).fillna(False))
-        & (df.street_number != "block")
-    ].reset_index()
-
-    expanded_unit_id_simple = df[
-        df.datapoint_id.isin(multi_unit_id)
-        & (~df.unit_id.str.contains(xx_to_yy_regex).fillna(False))
-        & (df.unit_id != "block")
-    ].reset_index()
-
-    # remove the multi-addresses
-    single_address_only = all_entities[
-        ~all_entities["datapoint_id"].isin(all_multi_ids)
-    ]
-    # remove all but the first instance of a label in the remaining instances
-    # this is because for single addresses there should be only a single label for each class
-    single_address_only = single_address_only[
-        single_address_only["label_id_count"] == 0
-    ]
-    df2 = single_address_only.pivot(
-        index="datapoint_id", columns="label", values="label_text"
-    )
-    # add the datapoint_id back in for each of joining
-    df2 = df2.merge(
-        single_address_only[["datapoint_id", "text"]].drop_duplicates(),
-        how="left",
-        left_on="datapoint_id",
-        right_on="datapoint_id",
-    )
-
-    full_expanded_data = pd.concat(
-        [
-            expanded_street,
-            expanded_unit_id,
-            expanded_street_simple,
-            expanded_unit_id_simple,
-            df2,
-        ]
-    )
-
-    return full_expanded_data
-
-
-# There is a significant change here which is that the column filter_type is renamed number_filter...
-# but this would only effect expansions which had that no?
-def parsing_and_expansion_process(
-    all_entities: pd.DataFrame,
-    expand_addresses: bool = False,
-    required_columns: Optional[List[str]] = None,
-) -> pd.DataFrame:
-    """
-    Process address data through parsing and expansion pipeline.
-
-    Combines address identification, label spreading, column validation,
-    backfilling, and final address generation into a single workflow.
-
-    Parameters
-    ----------
-    all_entities : pd.DataFrame
-        Input dataframe containing raw address data
-    expand_addresses : bool, default False
-        If True, expands addresses into multiple records
-    required_columns : list of str, optional
-        Required output columns. Uses standard address columns if None
-
-    Returns
-    -------
-    pd.DataFrame
-        Processed dataframe with parsed addresses and required columns
-    """
-
-    # Define default required columns
-    if required_columns is None:
-        required_columns = [
-            "building_name",
-            "street_name",
-            "street_number",
-            "number_filter",
-            "unit_id",
-            "unit_type",
-            "city",
-            "postcode",
-        ]
-
-    # Continue with existing logic
-    multi_unit_id, multi_property, all_multi_ids = identify_multi_addresses(
-        all_entities
-    )
-    df = spread_address_labels(all_entities, all_multi_ids)
-
-    # The columns are filled with an empty string as at the moment all columns should be strings
-    # Ensurinng string prevents errors later when cleaning is performed on street_name and other variables
-    # This is not being changed to default behaviour as I may need to implement more significant changes later
-    df = ensure_required_columns(df, required_columns, "")
-
-    # Blockers prevent the filling of wrong information. As an example if a building is going to back fill up
-    # previous addresses it should not back fill past another street as this is highly unlikely to be the same building
-    df = add_backfill_blockers(df)
-    df = backfill_address_labels(df)
-
-    df = final_parsed_addresses(
-        df,
-        all_entities,
-        multi_property,
-        multi_unit_id,
-        all_multi_ids,
-        expand_addresses=expand_addresses,
-    )
-
-    return df
+##
+##
+##
+##
+##
+##
 
 
 def load_csv_from_zip(
@@ -682,72 +441,10 @@ def load_and_prep_OCOD_data(file_path, csv_filename=None, keep_columns=None):
     return ocod_data
 
 
-def post_process_expanded_data(expanded_data, ocod_data):
-    """
-    This function adds in additional meta-data from the ocod dataset and prepares the final expanded dataset to be
-    exported for geo-location and classification
-    it takes two arguements
-    expanded_data is a pandas dataframe produced by the 'final_parsed_addresses' function
-    """
-    full_expanded_data = expanded_data.merge(
-        ocod_data, how="left", left_on="datapoint_id", right_index=True
-    )
-
-    full_expanded_data["within_title_id"] = (
-        full_expanded_data.groupby("title_number").cumcount() + 1
-    )
-    full_expanded_data["unique_id"] = [
-        str(x) + "-" + str(y)
-        for x, y in zip(
-            full_expanded_data["title_number"], full_expanded_data["within_title_id"]
-        )
-    ]
-
-    tmp_df = (
-        full_expanded_data[["title_number", "within_title_id"]]
-        .groupby("title_number")
-        .max("within_title_id")
-    ) > 1
-    tmp_df.columns = tmp_df.columns.str.replace(
-        "within_title_id", "within_larger_title"
-    )  # could also be called nested_address
-    full_expanded_data = full_expanded_data.merge(
-        tmp_df, how="left", left_on="title_number", right_index=True
-    )
-
-    full_expanded_data["postcode"] = full_expanded_data["postcode"].str.upper()
-    del tmp_df
-
-    # re-order the columns and drop columns that are not needed
-
-    full_expanded_data = full_expanded_data[
-        [
-            "title_number",
-            "within_title_id",
-            "unique_id",
-            "within_larger_title",
-            "tenure",
-            "unit_id",
-            "unit_type",
-            "building_name",
-            "street_number",
-            "street_name",
-            "postcode",
-            "city",
-            "district",
-            "county",
-            "region",
-            "price_paid",
-            "property_address",
-            "country_incorporated",
-        ]
-    ].replace("block", np.NaN)
-
-    return full_expanded_data
-
-
 def ensure_required_columns(df, required_columns, fill_value=None):
     """
+    I am not sure this is neeeded any more perhaps it can be removed
+
     Ensure that the dataframe has all required columns.
 
     Parameters:
@@ -776,3 +473,397 @@ def ensure_required_columns(df, required_columns, fill_value=None):
         print(f"Added missing columns: {missing_columns}")
 
     return df
+
+class AddressNode:
+    def __init__(self, entity: Dict[str, Any]):
+        self.entity = entity
+        self.type = entity['type']
+        self.text = entity['text']
+        self.start = entity['start']
+        self.end = entity['end']
+        self.children = []
+        self.parent = None
+        self.unit_type = None
+    
+    def add_child(self, child_node):
+        self.children.append(child_node)
+        child_node.parent = self
+    
+    def get_full_address(self) -> Dict[str, str]:
+        """Build complete address by traversing up to root"""
+        address = {}
+        current = self
+        
+        # Traverse up the tree collecting all components
+        while current:
+            address[current.type] = current.text.strip()
+            if current.unit_type:
+                address['unit_type'] = current.unit_type.text.strip()
+            current = current.parent
+        
+        return address
+
+class AddressGraph:
+    """Graph-based parser for hierarchical address entity relationships.
+    
+    The AddressGraph class constructs a tree structure from named entity recognition
+    results to parse complex addresses containing multiple units, buildings, and
+    address components. It handles hierarchical relationships between address
+    entities and extracts complete address combinations.
+    
+    The class organizes address entities into a predefined hierarchy:
+    - city (root level)
+    - postcode  
+    - street_name
+    - street_number
+    - building_name
+    - number_filter
+    - unit_id
+    - unit_type (special handling)
+    
+    Args:
+        entities (List[Dict[str, Any]]): List of named entities extracted from
+            address text. Each entity dictionary must contain 'type', 'text',
+            'start', and 'end' keys representing the entity type, text content,
+            and character positions.
+    
+    Attributes:
+        hierarchy_levels (Dict[str, int]): Mapping of entity types to their
+            hierarchy levels for tree construction.
+        nodes (List[AddressNode]): List of all address nodes in the graph.
+        city_node (Optional[AddressNode]): Reference to the city node if present,
+            used as the root of the address tree.
+    
+    Example:
+        >>> entities = [
+        ...     {'type': 'unit_type', 'text': 'Flat', 'start': 0, 'end': 4},
+        ...     {'type': 'unit_id', 'text': '1A', 'start': 5, 'end': 7},
+        ...     {'type': 'street_number', 'text': '25', 'start': 8, 'end': 10},
+        ...     {'type': 'street_name', 'text': 'Oak St', 'start': 11, 'end': 17},
+        ...     {'type': 'city', 'text': 'London', 'start': 18, 'end': 24}
+        ... ]
+        >>> graph = AddressGraph(entities)
+        >>> addresses_df = graph.get_addresses()
+    
+    Note:
+        The class automatically handles unit_type entities by associating them
+        with the nearest preceding unit_id entity within a 30-character distance.
+        Multiple complete addresses may be extracted if multiple leaf nodes exist
+        in the constructed tree.
+    """
+    def __init__(self, entities: List[Dict[str, Any]]):
+        self.hierarchy_levels = {
+            'city': 0,           # Always root
+            'postcode': 1,       # Child of city
+            'street_name': 2,    # Child of postcode or city
+            'street_number': 3,  # Child of street_name
+            'building_name': 4,  # Child of street_number or street_name
+            'number_filter': 5,  # Child of building_name
+            'unit_id': 6,        # Child of number_filter or building_name
+            'unit_type': 7       # Special handling
+        }
+        
+        self.nodes = []
+        self.city_node = None  # Track the city node separately
+        
+        self._build_graph(entities)
+    
+    def _build_graph(self, entities: List[Dict[str, Any]]):
+        # Separate unit_types for special handling
+        regular_entities = [e for e in entities if e['type'] != 'unit_type']
+        unit_types = [e for e in entities if e['type'] == 'unit_type']
+        
+        # Create nodes for regular entities
+        for entity in regular_entities:
+            node = AddressNode(entity)
+            self.nodes.append(node)
+            
+            # Track city node separately
+            if node.type == 'city':
+                self.city_node = node
+        
+        # Sort nodes by hierarchy level, then by position
+        self.nodes.sort(key=lambda x: (self.hierarchy_levels[x.type], x.start))
+        
+        # Group nodes by hierarchy level
+        levels = {}
+        for node in self.nodes:
+            level = self.hierarchy_levels[node.type]
+            if level not in levels:
+                levels[level] = []
+            levels[level].append(node)
+        
+        # Connect nodes level by level, but handle city specially
+        sorted_levels = sorted(levels.keys())
+        
+        # If we have a city, make all non-city nodes connect to it eventually
+        if self.city_node:
+            # Connect other nodes starting from level 1
+            for i, current_level in enumerate(sorted_levels[1:], 1):
+                parent_level = sorted_levels[i-1]
+                
+                for child in levels[current_level]:
+                    if child.type == 'city':  # Skip city nodes in regular processing
+                        continue
+                        
+                    # Find best parent from previous level
+                    best_parent = self._find_best_parent(child, levels[parent_level])
+                    if best_parent:
+                        best_parent.add_child(child)
+                    else:
+                        # If no parent found in immediate level, look further up
+                        found_parent = False
+                        for j in range(i-2, -1, -1):
+                            if j == 0:  # Level 0 is city level - use special logic
+                                self.city_node.add_child(child)
+                                found_parent = True
+                                break
+                            else:
+                                best_parent = self._find_best_parent(child, levels[sorted_levels[j]])
+                                if best_parent:
+                                    best_parent.add_child(child)
+                                    found_parent = True
+                                    break
+                        
+                        # If still no parent found, attach directly to city
+                        if not found_parent:
+                            self.city_node.add_child(child)
+        else:
+            # Original logic if no city node
+            for i, current_level in enumerate(sorted_levels[1:], 1):
+                parent_level = sorted_levels[i-1]
+                
+                for child in levels[current_level]:
+                    best_parent = self._find_best_parent(child, levels[parent_level])
+                    if best_parent:
+                        best_parent.add_child(child)
+                    else:
+                        for j in range(i-2, -1, -1):
+                            best_parent = self._find_best_parent(child, levels[sorted_levels[j]])
+                            if best_parent:
+                                best_parent.add_child(child)
+                                break
+        
+        # Handle unit types
+        self._connect_unit_types(unit_types)
+    
+    def _find_best_parent(self, child: AddressNode, potential_parents: List[AddressNode]) -> Optional[AddressNode]:
+        """Find the best parent for a child node"""
+        # Special handling: never make city a child of anything
+        if child.type == 'city':
+            return None
+            
+        valid_parents = []
+        
+        for parent in potential_parents:
+            # Skip if trying to make city a non-root
+            if parent.type == 'city':
+                # City can be parent of anyone
+                valid_parents.append((parent, 0))  # Give city priority with distance 0
+            else:
+                # For most relationships, parent should come after child in text
+                if child.start < parent.start:  
+                    distance = parent.start - child.end
+                    
+                    # Special case: number_filter should only parent the closest preceding unit_id
+                    # It may be prudent to rethink the logic a bit as number_filter is basically a child of unit_id
+                    # however the positioning is reveresed
+                    if parent.type == 'number_filter' and child.type == 'unit_id':
+                        # Check if there are any other unit_ids between this child and the parent
+                        has_intervening_units = any(
+                            node.type == 'unit_id' and 
+                            child.end < node.start < parent.start
+                            for node in self.nodes
+                        )
+                        
+                        # Only allow connection if no intervening unit_ids and reasonable distance
+                        if not has_intervening_units and distance <= 15:
+                            valid_parents.append((parent, distance))
+                    else:
+                        valid_parents.append((parent, distance))
+        
+        if not valid_parents:
+            return None
+    
+        # Return parent with minimum distance
+        return min(valid_parents, key=lambda x: x[1])[0]
+    
+    def _connect_unit_types(self, unit_types: List[Dict[str, Any]]):
+        """Connect unit_type entities to their corresponding unit_id nodes"""
+        unit_nodes = [n for n in self.nodes if n.type == 'unit_id']
+        
+        for unit_node in unit_nodes:
+            # Find closest preceding unit_type
+            best_unit_type = None
+            min_distance = float('inf')
+            
+            for unit_type_entity in unit_types:
+                if unit_type_entity['start'] < unit_node.start:
+                    distance = unit_node.start - unit_type_entity['end']
+                    if distance < min_distance and distance < 30:
+                        min_distance = distance
+                        best_unit_type = unit_type_entity
+            
+            if best_unit_type:
+                unit_node.unit_type = AddressNode(best_unit_type)
+    
+    def get_addresses(self) -> pd.DataFrame:
+        """Extract all complete addresses"""
+        # Find leaf nodes (nodes with no children)
+        leaf_nodes = [node for node in self.nodes if not node.children]
+        
+        # If no leaf nodes, use all nodes (fallback)
+        if not leaf_nodes:
+            leaf_nodes = self.nodes
+        
+        addresses = []
+        for leaf in leaf_nodes:
+            address = leaf.get_full_address()
+            addresses.append(address)
+        
+        if not addresses:
+            return pd.DataFrame()
+        
+        # Create DataFrame
+        df = pd.DataFrame(addresses)
+        
+        # Define column order
+        column_order = ['unit_type', 'unit_id', 'number_filter', 'building_name',
+                       'street_number', 'street_name', 'postcode', 'city']
+        
+        existing_columns = [col for col in column_order if col in df.columns]
+        df = df[existing_columns]
+        
+        return df
+    
+    def visualize_graph(self):
+        """Visualize the graph structure"""
+        # Find root nodes
+        roots = [node for node in self.nodes if node.parent is None]
+        
+        def print_tree(node, level=0):
+            indent = "  " * level
+            unit_info = f" (unit_type: {node.unit_type.text})" if node.unit_type else ""
+            print(f"{indent}{node.type}: '{node.text.strip()}'{unit_info}")
+            for child in node.children:
+                print_tree(child, level + 1)
+        
+        print("Address Graph:")
+        for root in roots:
+            print_tree(root)
+        
+        # Also show leaf nodes for debugging
+        leaves = [node for node in self.nodes if not node.children]
+        print(f"\nLeaf nodes: {[(n.type, n.text.strip()) for n in leaves]}")
+
+
+def parse_addresses_to_dicts(entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Parse entities and return list of dictionaries instead of DataFrame"""
+    if not entities:
+        return []
+    
+    graph = AddressGraph(entities)
+    
+    # Find leaf nodes
+    leaf_nodes = [node for node in graph.nodes if not node.children]
+    if not leaf_nodes:
+        leaf_nodes = graph.nodes
+    
+    # Convert each leaf to dictionary
+    address_dicts = []
+    for leaf in leaf_nodes:
+        address = leaf.get_full_address()
+        address_dicts.append(address)
+    
+    return address_dicts
+
+def process_addresses(address_data_list: List[Dict]) -> pd.DataFrame:
+    """Process a list of address data dictionaries and return structured address DataFrame.
+    
+    Takes a list of dictionaries containing address entities and metadata, parses each
+    address using the AddressGraph class, and returns a consolidated DataFrame with
+    all parsed addresses and their associated metadata.
+    
+    Args:
+        address_data_list (List[Dict]): List of dictionaries, each containing:
+            - 'entities' (List[Dict]): NER entities with type, text, start, end, confidence
+            - 'row_index' (int): Original row index from source data
+            - 'datapoint_id' (str/int): Unique identifier for the address record
+            - 'original_address' (str): The original unparsed address text
+    
+    Returns:
+        pd.DataFrame: DataFrame with parsed address components and metadata. Columns include:
+            - Address components: unit_type, unit_id, number_filter, building_name,
+              street_number, street_name, postcode, city (only existing columns included)
+            - Metadata: datapoint_id
+            Returns empty DataFrame if no addresses could be processed.
+    
+    Raises:
+        None: Exceptions during individual address processing are caught and logged,
+              allowing processing to continue with remaining addresses.
+    
+    Note:
+        - Each input address may generate multiple output rows if multiple parsed
+          addresses are extracted from the entities
+        - Failed address parsing attempts are logged but don't stop overall processing
+        - Column order is standardized with address components first, then metadata
+    
+    Example:
+        >>> address_data = [{
+        ...     'entities': [{'type': 'street_number', 'text': '123', 'start': 0, 'end': 3}],
+        ...     'row_index': 0,
+        ...     'datapoint_id': 'addr_001',
+        ...     'original_address': '123 Main St'
+        ... }]
+        >>> df = process_addresses(address_data)
+        >>> print(df.columns.tolist())
+        ['street_number', 'datapoint_id']
+    """
+    
+    all_rows = []
+    
+    for address_data in address_data_list:
+        try:
+            entities = address_data['entities']
+            
+            if not entities:
+                continue
+            
+            # Get parsed addresses as dictionaries (not DataFrame)
+            parsed_addresses = parse_addresses_to_dicts(entities)
+            
+            # Add metadata to each parsed address
+            metadata = {
+                'row_index': address_data['row_index'],
+                'datapoint_id': address_data['datapoint_id'],
+                'property_address': address_data['original_address']
+            }
+            
+            for address_dict in parsed_addresses:
+                # Merge parsed address with metadata
+                full_row = {**address_dict, **metadata}
+                all_rows.append(full_row)
+                
+        except Exception as e:
+            # Log error but continue processing
+            print(f"Error processing address {address_data['row_index']}: {e}")
+            continue
+    
+    # Single DataFrame creation at the end
+    if not all_rows:
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(all_rows)
+    
+    # Define column order (address columns first, then metadata)
+    address_columns = ['unit_type', 'unit_id', 'number_filter', 'building_name',
+                      'street_number', 'street_name', 'postcode', 'city']
+    metadata_columns = ['datapoint_id']
+    
+    # Reorder columns (only include columns that exist)
+    all_columns = address_columns + metadata_columns
+    existing_columns = [col for col in all_columns if col in df.columns]
+    df = df[existing_columns]
+    
+    return df
+
