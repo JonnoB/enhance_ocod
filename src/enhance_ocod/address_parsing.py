@@ -5,6 +5,7 @@ import time
 import zipfile
 from typing import Optional, List, Callable, Dict, Optional, Any
 import io
+from .labelling.ner_regex import xx_to_yy_regex
 
 # This  module is supposed to contain all the relevant functions for parsing the labeled json file
 
@@ -72,6 +73,42 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
 ## Expanding the addresses
 ##
 
+def needs_expansion(df, class_var = 'class'):
+
+    """Identify rows that need expansion due to ranged street or unit identifiers.
+    
+    Identifies which rows in the dataframe need to be expanded to multiple rows
+    because they have street or unit id's of the form "34-41", "10-20", etc.
+    This is not the same as identifying whether a title contains multiple
+    properties, and this operation is performed by "tag_multi_property".
+    
+    Args:
+        df (pandas.DataFrame): Input dataframe to analyze.
+        class_var (str, optional): Column name containing property class
+            information. Defaults to 'class'.
+    
+    Returns:
+        pandas.DataFrame: Copy of input dataframe with additional 'needs_expansion'
+            boolean column indicating which rows need expansion.
+    
+    Note:
+        Only residential properties are considered for expansion. The function
+        checks for range patterns in 'unit_id' column, or 'street_number' 
+        column when 'unit_id' is missing.
+    """
+
+    df = df.copy()
+    
+    df['number_filter'] = df['number_filter'].fillna('none')
+    df['number_filter'] = df['number_filter'].astype(str)
+
+    residential_mask = df[class_var] == 'residential'
+    expansion_condition = (df['unit_id'].str.contains(xx_to_yy_regex, na=False) | 
+                    (df['unit_id'].isna() & df['street_number'].str.contains(xx_to_yy_regex, na=False)))
+
+    df['needs_expansion'] = np.where(residential_mask & expansion_condition, True, False)
+
+    return df
 
 def expand_multi_id(multi_id_string):
     # the function takes a string that is in the form '\d+(\s)?(-|to)(\s)?\d+'
@@ -97,25 +134,44 @@ def filter_contiguous_numbers(number_list, number_filter):
     return out
 
 
-def expand_dataframe_numbers(df2, column_name, print_every=1000, min_count=1):
-    # cycles through the dataframe and and expands xx-to-yy formats printing every ith iteration
-
+def expand_dataframe_numbers_core(df, column_name, print_every=1000, min_count=1):
+    """Expand number range formats in a dataframe column with performance monitoring.
+    
+    Processes each row in the dataframe to expand number ranges in the specified 
+    column from 'xx-to-yy' format into individual entries. Includes timing 
+    diagnostics and progress reporting.
+    
+    Args:
+        df (pandas.DataFrame): Input dataframe to process.
+        column_name (str): Name of the column containing number ranges to expand.
+        print_every (int, optional): Print progress every nth iteration. Defaults to 1000.
+        min_count (int, optional): Minimum count threshold for expansion logic. 
+            Defaults to 1.
+    
+    Returns:
+        pandas.DataFrame: Expanded dataframe with individual number entries and 
+            timing performance metrics logged to console.
+    
+    Note:
+        This function is typically called internally by expand_dataframe_numbers 
+        rather than used directly.
+    """
     # Handle empty dataframe case
-    if df2.shape[0] == 0:
-        return df2
+    if df.shape[0] == 0:
+        return df
 
     temp_list = []
     expand_time = 0
     filter_time = 0
     make_dataframe_time = 0
 
-    for i in range(0, df2.shape[0]):
+    for i in range(0, df.shape[0]):
         start_expand_time = time.time()
-        numbers_list = expand_multi_id(df2.loc[i][column_name])
+        numbers_list = expand_multi_id(df.loc[i][column_name])
         end_expand_time = time.time()
 
         numbers_list = filter_contiguous_numbers(
-            numbers_list, df2.loc[i]["number_filter"]
+            numbers_list, df.loc[i]["number_filter"]
         )
 
         end_filter_time = time.time()
@@ -125,12 +181,12 @@ def expand_dataframe_numbers(df2, column_name, print_every=1000, min_count=1):
         # This prevents large properties counting as several properties
         if dataframe_len > min_count:
             tmp = pd.concat(
-                [df2.iloc[i].to_frame().T] * dataframe_len, ignore_index=True
+                [df.iloc[i].to_frame().T] * dataframe_len, ignore_index=True
             )
 
             tmp[column_name] = numbers_list
         else:
-            tmp = df2.iloc[i].to_frame().T
+            tmp = df.iloc[i].to_frame().T
 
         temp_list.append(tmp)
         end_make_dataframe_time = time.time()
@@ -163,7 +219,79 @@ def expand_dataframe_numbers(df2, column_name, print_every=1000, min_count=1):
 
     return out
 
+def expand_dataframe_numbers(df, class_var = 'class', print_every=1000, min_count=1):
+    """Expand number ranges in dataframe based on unit_id availability and expansion flags.
+    
+    Conditionally expands number ranges in either unit_id or street_number columns 
+    depending on data availability and expansion requirements. Processes rows marked 
+    for expansion while preserving non-expansion rows unchanged.
+    
+    Args:
+        df (pandas.DataFrame): Input dataframe with expansion flags and number data.
+        column_name (str): Primary column name for number range expansion.
+        print_every (int, optional): Progress reporting interval. Defaults to 1000.
+        min_count (int, optional): Minimum count threshold for expansion. Defaults to 1.
+    
+    Returns:
+        pandas.DataFrame: Combined dataframe with expanded number ranges and 
+            unchanged non-expansion rows, reset with continuous index.
+    """
 
+    df = needs_expansion(df, class_var = class_var)
+
+    unit_expanded = expand_dataframe_numbers_core(
+        df.loc[df['unit_id'].notna() & df['needs_expansion']].reset_index(drop=True), 
+        column_name='unit_id', 
+        print_every=print_every, 
+        min_count=min_count
+    )
+
+    street_expanded = expand_dataframe_numbers_core(
+        df.loc[df['unit_id'].isna() & df['needs_expansion']].reset_index(drop=True), 
+        column_name='street_number', 
+        print_every=print_every, 
+        min_count=min_count
+    )
+
+    expanded_df = pd.concat([df.loc[~df['needs_expansion']], unit_expanded, street_expanded], ignore_index = True)
+
+    return expanded_df
+
+
+def create_unique_id(df):
+    """
+    Create unique identifiers for DataFrame rows grouped by title number.
+    
+    This function adds two new columns to the DataFrame:
+    - 'multi_id': Sequential number within each title_number group
+    - 'unique_id': Combination of title_number and multi_id
+    
+    Args:
+        df (pandas.DataFrame): Input DataFrame containing a 'title_number' column.
+    
+    Returns:
+        pandas.DataFrame: Modified DataFrame with added 'multi_id' and 'unique_id' columns.
+    
+    Example:
+        >>> df = pd.DataFrame({'title_number': [1, 1, 2, 2, 2]})
+        >>> result = create_unique_id(df)
+        >>> print(result[['title_number', 'multi_id', 'unique_id']])
+           title_number  multi_id unique_id
+        0             1         1       1-1
+        1             1         2       1-2
+        2             2         1       2-1
+        3             2         2       2-2
+        4             2         3       2-3
+    """
+    df['multi_id'] = df.groupby('title_number').cumcount() + 1
+    df['unique_id'] = [
+        str(x) + "-" + str(y)
+        for x, y in zip(
+            df["title_number"], df["multi_id"]
+        )
+    ]
+    
+    return df
 ##
 ##
 ##

@@ -56,7 +56,8 @@ from enhance_ocod.address_parsing import (
     load_and_prep_OCOD_data,
     load_postcode_district_lookup,
     process_addresses,
-    expand_dataframe_numbers
+    expand_dataframe_numbers,
+    create_unique_id
 )
 from enhance_ocod.locate_and_classify import (
     load_voa_ratinglist,
@@ -65,8 +66,9 @@ from enhance_ocod.locate_and_classify import (
     enhance_ocod_with_gazetteers,
     add_business_matches,
     property_class,
-    tag_multi_property,
-)
+    property_class_no_match
+    )
+
 from enhance_ocod.price_paid_process import check_and_preprocess_price_paid_data, gazetteer_generator
 from pathlib import Path
 from tqdm import tqdm
@@ -114,15 +116,11 @@ output_dir.mkdir(parents=True, exist_ok=True)
 parsed_results_dir = SCRIPT_DIR.parent / "data" / "parsed_ocod_dicts"
 parsed_results_dir.mkdir(parents=True, exist_ok=True)
 
-
-
-# Load common data once (if these don't change between files)
 print("Loading common reference data...")
 postcode_district_lookup = load_postcode_district_lookup(str(ONSPD_path))
 voa_businesses = load_voa_ratinglist(str(voa_path), postcode_district_lookup)
 
 check_and_preprocess_price_paid_data(str(price_paid_path), postcode_district_lookup, str(processed_price_paid_dir))
-
 
 
 ##########################
@@ -191,7 +189,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     ocod_data = load_and_prep_OCOD_data(str(zip_file))
 
     ###############
-    # Parse addresses
+    # Perform NER on addresses
     ###############
     if parsed_results_file.exists():
         print(f"Loading cached parsing results for {zip_file.name}...")
@@ -223,7 +221,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
 
     #################v
     #
-    # Post process resutls
+    # Process the NER dictionaries
     #
     ################
     processed_addresses_df = process_addresses(results['results'])
@@ -251,6 +249,12 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
             ]
         ]
 
+    #################v
+    #
+    # Add geographic information
+    #
+    ################   
+
     post_processed_data["postcode"] = post_processed_data["postcode"].str.upper()
 
     pre_process_ocod = add_geographic_metadata(post_processed_data, postcode_district_lookup)
@@ -262,42 +266,23 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
 
     with_matches = add_business_matches(enhanced, voa_businesses)
 
+    #################v
+    #
+    # Classify and expand the rows
+    #
+    ################   
+
     classified = property_class(with_matches)
 
     classified = property_class_no_match(classified)
 
-    multi_tagged = tag_multi_property(classified)
+    expanded_df = expand_dataframe_numbers(classified, class_var = 'class', print_every=10000, min_count=1)
 
-    unit_expanded = expand_dataframe_numbers(
-        multi_tagged.loc[multi_tagged['unit_id'].notna() & multi_tagged['is_multi']].reset_index(drop=True), 
-        column_name='unit_id', 
-        print_every=10000, 
-        min_count=1
-    )
-
-    street_expanded = expand_dataframe_numbers(
-        multi_tagged.loc[multi_tagged['unit_id'].isna() & multi_tagged['is_multi']].reset_index(drop=True), 
-        column_name='street_number', 
-        print_every=10000, 
-        min_count=1
-    )
-
-    expanded_df = pd.concat([multi_tagged.loc[~multi_tagged['is_multi']], unit_expanded, street_expanded], ignore_index = True)
-
-    ## Maybe this should be turned into it'sown function?
-    expanded_df['multi_id'] = expanded_df.groupby('title_number').cumcount() +1
-    expanded_df['unique_id'] = [
-            str(x) + "-" + str(y)
-            for x, y in zip(
-                expanded_df["title_number"], expanded_df["multi_id"]
-            )
-        ]
-
+    expanded_df = create_unique_id(expanded_df)
 
     columns = [
         "title_number",
         "multi_id",
-        "is_multi",
         "unique_id",
         "unit_id",
         "unit_type",
@@ -315,6 +300,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         "lad11cd",
         "country_incorporated",
         "class",
+        "needs_expansion",
     ]
 
 

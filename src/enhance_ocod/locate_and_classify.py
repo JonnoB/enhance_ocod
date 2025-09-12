@@ -565,6 +565,25 @@ def add_business_matches(df, voa_businesses):
 
 
 def property_class(df):
+    """
+    Create a hierarchical classification of property types using logical rules.
+    
+    Applies a series of pattern-matching conditions to classify properties into
+    categories such as land, carpark, airspace, residential, business, or unknown
+    based on property address patterns, building names, and matching indicators.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input dataframe containing property data to be classified.
+    
+    Returns
+    -------
+    pandas.DataFrame
+        Input dataframe with additional 'class' column containing the
+        property classification.
+    """
+
     df["class"] = np.select(
         [
             df["property_address"].str.contains(r"^(?:land|plot)", case=False),
@@ -615,9 +634,25 @@ def property_class(df):
 
 def property_class_no_match(df):
     """
-    A somewhat risky approach to matching that is run given that the basic classification has been performed. 
-    It assumes that any address which has a street number but does not match a known business address is residential.
-    Should be considered the upper end of the number of residential properties.
+    Perform additional property classification for previously unmatched properties.
+    
+    A more permissive classification approach that treats unmatched addresses
+    with street numbers as residential properties when they don't match known
+    business addresses but do match street patterns. This represents an upper
+    bound estimate for residential property counts.
+    
+    Note: This function should be run after property_class() has been applied.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input dataframe that has already been processed by property_class().
+    
+    Returns
+    -------
+    pandas.DataFrame
+        Input dataframe with additional 'class_no_match' column containing
+        the updated property classification.
     """
     df["class_no_match"] = np.where(
         (df["class"] == "unknown") & 
@@ -628,22 +663,4 @@ def property_class_no_match(df):
         df["class"]
     )
     
-    return df
-
-def tag_multi_property(df):
-
-    """ 
-    Identifies which properties should be classed as multi-property
-    """
-
-    df = df.copy()
-    df['number_filter'] = df['number_filter'].fillna('none')
-    df['number_filter'] = df['number_filter'].astype(str)
-
-    residential_mask = df['class'] == 'residential'
-    multi_condition = (df['unit_id'].str.contains(xx_to_yy_regex, na=False) | 
-                    (df['unit_id'].isna() & df['street_number'].str.contains(xx_to_yy_regex, na=False)))
-
-    df['is_multi'] = np.where(residential_mask & multi_condition, True, False)
-
     return df
