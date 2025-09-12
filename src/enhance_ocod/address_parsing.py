@@ -661,14 +661,30 @@ class AddressGraph:
                 # City can be parent of anyone
                 valid_parents.append((parent, 0))  # Give city priority with distance 0
             else:
-                # For non-city relationships, maintain original position logic
+                # For most relationships, parent should come after child in text
                 if child.start < parent.start:  
-                    distance = parent.start - child.end    
-                    valid_parents.append((parent, distance))
+                    distance = parent.start - child.end
+                    
+                    # Special case: number_filter should only parent the closest preceding unit_id
+                    # It may be prudent to rethink the logic a bit as number_filter is basically a child of unit_id
+                    # however the positioning is reveresed
+                    if parent.type == 'number_filter' and child.type == 'unit_id':
+                        # Check if there are any other unit_ids between this child and the parent
+                        has_intervening_units = any(
+                            node.type == 'unit_id' and 
+                            child.end < node.start < parent.start
+                            for node in self.nodes
+                        )
+                        
+                        # Only allow connection if no intervening unit_ids and reasonable distance
+                        if not has_intervening_units and distance <= 15:
+                            valid_parents.append((parent, distance))
+                    else:
+                        valid_parents.append((parent, distance))
         
         if not valid_parents:
             return None
-        
+    
         # Return parent with minimum distance
         return min(valid_parents, key=lambda x: x[1])[0]
     

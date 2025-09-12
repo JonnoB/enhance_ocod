@@ -190,7 +190,7 @@ ENTITY_COLUMNS = [
 def load_ground_truth():
     """Loads and prepares the ground truth data from the CSV file."""
     try:
-        df = pd.read_csv('/teamspace/studios/this_studio/enhance_ocod/data/training_data/parse_tree_unit_tests.csv')
+        df = pd.read_csv('parse_tree_unit_tests.csv')
 
         # Replace NaN with None for cleaner comparison (pandas default is float NaN)
         return df.where(pd.notna(df), None)
