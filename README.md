@@ -23,6 +23,7 @@ The project includes:
 enhance_ocod/
 ├── src/enhance_ocod/   # Core Python library
 │   ├── address_parsing.py
+│   ├── analysis.py
 │   ├── inference.py
 │   ├── labelling/
 │   │   ├── ner_regex.py
@@ -34,6 +35,8 @@ enhance_ocod/
 │   └── training.py
 ├── scripts/            # Example and utility scripts
 ├── data/               # Input and output data
+├── notebooks/          # Analysis performed for the paper
+├── tests/              # Unit tests
 ├── requirements.txt    # Python dependencies
 ├── pyproject.toml      # Project metadata
 ├── README.md           # Documentation
