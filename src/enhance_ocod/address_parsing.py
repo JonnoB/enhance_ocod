@@ -16,6 +16,7 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
 
     Loads the ONSPD (Office for National Statistics Postcode Directory) and reduces
     it to relevant columns to save memory. Filters for English and Welsh postcodes.
+    Converts geographic code columns to categorical for optimal memory usage.
 
     Args:
         file_path (str): Path to the ZIP file containing the ONSPD data.
@@ -23,7 +24,7 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
             If None, automatically finds the appropriate file.
 
     Returns:
-        pd.DataFrame: Processed postcode district lookup table with selected columns.
+        pd.DataFrame: Processed postcode district lookup table with mixed dtypes optimized for memory.
     """
     with zipfile.ZipFile(file_path) as zf:
         # If no target file specified, find it automatically
@@ -32,10 +33,23 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
                 i for i in zf.namelist() if re.search(r"^Data/ONSPD.+csv$", i)
             ][0]
 
+        columns_to_read = ["pcds", "oslaua", "oa11", "lsoa11", "msoa11", "ctry"]
+        dtype_dict = {
+            "pcds": "string",
+            "oslaua": "category",
+            "oa11": "category",
+            "lsoa11": "category", 
+            "msoa11": "category",
+            "ctry": "category"
+        }
+
         with io.TextIOWrapper(zf.open(target_post_area), encoding="latin-1") as f:
-            postcode_district_lookup = pd.read_csv(f)[
-                ["pcds", "oslaua", "oa11", "lsoa11", "msoa11", "ctry"]
-            ]
+            postcode_district_lookup = pd.read_csv(
+                f, 
+                dtype=dtype_dict,
+                usecols=columns_to_read, 
+                low_memory=True  
+            )
 
             # Filter for English and Welsh postcodes
             postcode_district_lookup = postcode_district_lookup[
@@ -55,7 +69,7 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
                 inplace=True,
             )
 
-            # Remove spaces from postcodes
+            # Process postcodes - keep as string since each is unique
             postcode_district_lookup["postcode2"] = (
                 postcode_district_lookup["postcode2"]
                 .str.lower()
@@ -64,6 +78,11 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
 
             # Drop country column
             postcode_district_lookup.drop("ctry", axis=1, inplace=True)
+
+            # Remove unused values, this ensures that only English and Welsh geography
+            # categories remain.
+            for col in postcode_district_lookup.select_dtypes(include=['category']).columns:
+                postcode_district_lookup[col] = postcode_district_lookup[col].cat.remove_unused_categories()
 
     return postcode_district_lookup
 
@@ -290,6 +309,7 @@ def create_unique_id(df):
             df["title_number"], df["multi_id"]
         )
     ]
+    df['is_multi'] = df.groupby('title_number')['multi_id'].transform('max') > 1
     
     return df
 ##

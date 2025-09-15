@@ -5,6 +5,13 @@ from enhance_ocod.address_parsing import process_addresses
 from typing import List
 import numpy as np
 
+
+"""
+This set of tests ensures that address entities are being parsed as expected.
+It checks basic parse order as well as more complex edge cases. 
+New edge cases can be added and fixes created (if necessary) as they are found.
+"""
+
 def create_test_entity(text: str, target_substring: str, entity_type: str) -> dict:
     """
     Find a substring in text and return its position with the specified type.

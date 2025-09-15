@@ -1,11 +1,65 @@
-# the functions used by the empty homes project python notebooks
+"""
+Address geolocation and property classification for OCOD database.
+
+This module provides functionality for geolocating addresses in the OCOD database within 
+the UK government's Output Area (OA), Lower Super Output Area (LSOA), 
+and Local Authority District (LAD) geographical framework.
+
+The module also provides classification capabilities for identifying property 
+types (residential, business, land, etc.) and detecting multi-property 
+developments through rule-based classification and business address matching 
+against Valuation Office Agency (VOA) data.
+
+Key Features
+------------
+- Postcode-based geographic area lookup and assignment
+- Address standardization and cleaning for improved matching
+- Business property identification using VOA rating list data
+- Rule-based property type classification system
+- Address component matching (building names, street names, numbers)
+- Geographic gazetteer enhancement for missing location data
+- Classification performance evaluation metrics
+
+Main Functions
+--------------
+load_postcode_district_lookup : Load ONS postcode to geographic area mappings
+load_voa_ratinglist : Load and process VOA business property data
+add_geographic_metadata : Enrich addresses with geographic area codes
+enhance_ocod_with_gazetteers : Fill missing geographic data using gazetteers
+add_business_matches : Perform address matching against business database
+property_class : Apply rule-based property type classification
+evaluate_classification_predictions : Assess classification performance
+
+Dependencies
+------------
+- pandas : Data manipulation and analysis
+- numpy : Numerical computing
+- sklearn.metrics : Classification evaluation metrics
+- .labelling.ner_regex : Address pattern recognition utilities
+
+Notes
+-----
+This module is designed for processing UK property data and requires 
+specific data formats from ONS and VOA sources. Classification rules 
+are configurable and can be customized for different use cases.
+
+The geographic framework follows UK government statistical geography 
+standards with hierarchical area codes (OA → LSOA → MSOA → LAD).
+"""
+
 import io
 import re
-import time
 import zipfile
 import pandas as pd
 import numpy as np
 from .labelling.ner_regex import xx_to_yy_regex
+
+from sklearn.metrics import (
+    f1_score, 
+    precision_score, 
+    recall_score, 
+    classification_report
+)
 
 
 def load_postcode_district_lookup(file_path, target_post_area=None):
@@ -124,32 +178,37 @@ def clean_street_numbers(df, original_column="number_or_name"):
 
 def load_voa_ratinglist(file_path, postcode_district_lookup):
     """
-    Performance-optimized version focusing on string operations
+    Optimized version - only load necessary columns, use categorical data types,
+    and minimize memory usage
     """
-
+    
     def find_largest_file(zip_path):
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             largest_file = max(zip_ref.infolist(), key=lambda x: x.file_size)
             return largest_file.filename
 
-    VOA_headers_needed = [
-        "Primary And Secondary Description Code",  # 4
-        "Primary Description Text",  # 5
-        "Unique Address Reference Number UARN",  # 6
-        "Full Property Identifier",  # 7
-        "Firms Name",  # 8
-        "Number Or Name",  # 9
-        "Street",  # 10
-        "Town",  # 11
-        "Postal District",  # 12
-        "County",  # 13
-        "Postcode",  # 14
+    # Only load the columns we actually need for processing
+    needed_column_indices = [4, 5, 7, 9, 10, 14]  # Only the essential columns
+    column_names = [
+        "primary_and_secondary_description_code",  # 4 - for filtering
+        "primary_description_text",                # 5 - for filtering  
+        "full_property_identifier",                # 7 - for westfield processing
+        "number_or_name",                         # 9 - for street_number and building_name
+        "street",                                 # 10 - for street_name2
+        "postcode"                                # 14 - for merge
     ]
+    
 
-    VOA_headers = [x.lower().replace(" ", "_") for x in VOA_headers_needed]
-    usecols = list(range(4, 15))
+    dtype_dict = {
+        "primary_and_secondary_description_code": "category",
+        "primary_description_text": "category", 
+        "full_property_identifier": "string",
+        "number_or_name": "string", 
+        "street": "string",
+        "postcode": "string"
+    }
 
-    # Read data (same as before)
+    # Read data with optimizations
     if file_path.lower().endswith(".zip"):
         largest_file = find_largest_file(file_path)
         with zipfile.ZipFile(file_path, "r") as zip_ref:
@@ -159,10 +218,10 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
                     sep="*",
                     encoding_errors="ignore",
                     header=None,
-                    names=VOA_headers,
-                    usecols=usecols,
+                    names=column_names,
+                    usecols=needed_column_indices,
+                    dtype=dtype_dict,
                     index_col=False,
-                    dtype=str,
                 )
     else:
         voa_businesses = pd.read_csv(
@@ -170,67 +229,68 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
             sep="*",
             encoding_errors="ignore",
             header=None,
-            names=VOA_headers,
-            usecols=usecols,
+            names=column_names,
+            usecols=needed_column_indices,
+            dtype=dtype_dict,
             index_col=False,
-            dtype=str,
         )
 
-    # Early filtering BEFORE expensive string operations
-    # Filter out unwanted data first to reduce processing volume
-    print(f"Initial rows: {len(voa_businesses)}")
 
-    # Use faster operations for filtering
-    advertising_mask = voa_businesses["primary_description_text"].str.contains(
-        "ADVERTISING", na=False
+    # Early filtering with optimized operations
+    excluded_codes = {"C0", "CP", "CP1", "CX", "MX"}
+    
+    # Use vectorized operations and chain filters
+    mask = (
+        ~voa_businesses["primary_description_text"].str.contains("ADVERTISING", na=False) &
+        ~voa_businesses["primary_and_secondary_description_code"].isin(excluded_codes)
     )
-    voa_businesses = voa_businesses[~advertising_mask]
-
-    excluded_codes = {"C0", "CP", "CP1", "CX", "MX"}  # Use set for faster lookup
-    parking_mask = voa_businesses["primary_and_secondary_description_code"].isin(
-        excluded_codes
-    )
-    voa_businesses = voa_businesses[~parking_mask]
-
+    voa_businesses = voa_businesses[mask]
+    
+    # Efficient string processing - do all operations at once
     voa_businesses["postcode"] = voa_businesses["postcode"].str.lower()
-    voa_businesses["street"] = voa_businesses["street"].str.lower()
+    voa_businesses["postcode2"] = voa_businesses["postcode"].str.replace(r"\s", "", regex=True)
+    
+    # Convert postcode2 to categorical after processing
+    voa_businesses["postcode2"] = voa_businesses["postcode2"].astype("category")
 
-    # Chain regex operations to reduce passes through data
-    voa_businesses["postcode2"] = voa_businesses["postcode"].str.replace(
-        r"\s", "", regex=True
-    )
-
+    # Process street names efficiently
+    street_lower = voa_businesses["street"].str.lower()
     voa_businesses["street_name2"] = (
-        voa_businesses["street"]
+        street_lower
         .str.replace(r"'", "", regex=True)
         .str.replace(r"s(s)?(?=\s)", "", regex=True)
         .str.replace(r"\s", "", regex=True)
-    )
+    ).astype("category")  # Convert to categorical
 
-    # First merge to reduce dataset size
+    # Early merge to reduce dataset size
     voa_businesses = voa_businesses.merge(
-        postcode_district_lookup, left_on="postcode2", right_on="postcode2", how="inner"
+        postcode_district_lookup, 
+        left_on="postcode2", 
+        right_on="postcode2", 
+        how="inner"
     )
+    
 
-    # Now do expensive operations on smaller dataset
+    # Process on smaller dataset
     voa_businesses = clean_street_numbers(
         voa_businesses, original_column="number_or_name"
     )
 
+    # Efficient conditional operations
     westfield_mask = voa_businesses["full_property_identifier"].str.contains(
         "WESTFIELD SHOPPING CENTRE", na=False
     )
-    if westfield_mask.any():  # Only process if there are matches
-        voa_businesses.loc[westfield_mask, "street_number"] = np.nan
+    if westfield_mask.any():
+        voa_businesses.loc[westfield_mask, "street_number"] = pd.NA
 
     if "street_number" in voa_businesses.columns:
         phone_mask = voa_businesses["street_number"].str.contains(
             r"-\d+-", regex=True, na=False
         )
-        if phone_mask.any():  # Only process if there are matches
-            voa_businesses.loc[phone_mask, "street_number"] = np.nan
+        if phone_mask.any():
+            voa_businesses.loc[phone_mask, "street_number"] = pd.NA
 
-    # OPTIMIZATION 6: Optimize building_name extraction
+    # Building name extraction
     voa_businesses["building_name"] = (
         voa_businesses["number_or_name"]
         .str.lower()
@@ -240,31 +300,21 @@ def load_voa_ratinglist(file_path, postcode_district_lookup):
         )
     )
 
-    return voa_businesses
+    # Convert final columns to optimal types
+    if "street_number" in voa_businesses.columns:
+        voa_businesses["street_number"] = voa_businesses["street_number"].astype("category")
+    
+    if "building_name" in voa_businesses.columns:
+        voa_businesses["building_name"] = voa_businesses["building_name"].astype("category")
 
-def counts_of_businesses_per_oa_lsoa(ocod_data, voa_businesses):
-    """
-    This function allows areas with no  businesses to automatically exclude business from the classification
-    """
-    # Create a dataframe that contains the counts of businesses per OA
-    postcode_counts_voa = (
-        voa_businesses.groupby("oa11cd").size().reset_index(name="business_counts")
-    )
-    ocod_data = pd.merge(ocod_data, postcode_counts_voa, on="oa11cd", how="left")
-    ocod_data["business_counts"] = ocod_data["business_counts"].fillna(0)
-
-    # do the same for lsoa
-    lsoa_counts_voa = (
-        voa_businesses.groupby("lsoa11cd")
-        .size()
-        .reset_index(name="lsoa_business_counts")
-    )
-    ocod_data = pd.merge(ocod_data, lsoa_counts_voa, on="lsoa11cd", how="left")
-    ocod_data["lsoa_business_counts"] = ocod_data["lsoa_business_counts"].fillna(0)
-
-    return ocod_data
-
-
+    # Return only the columns we need
+    final_columns = ['street_name2', 'street_number', 'building_name', 
+                    'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd']
+    
+    # Only select columns that exist
+    existing_columns = [col for col in final_columns if col in voa_businesses.columns]
+    
+    return voa_businesses[existing_columns].copy()
 
 
 def add_geographic_metadata(df, postcode_district_lookup):
@@ -304,7 +354,7 @@ def add_geographic_metadata(df, postcode_district_lookup):
 
     ##add in the geographic area data like lsoa etc
     df["postcode2"] = (
-        df["postcode"].str.lower().str.replace("\s", "", regex=True)
+        df["postcode"].str.lower().str.replace(r"\s", "", regex=True)
     )
 
     df = df.merge(
@@ -492,175 +542,379 @@ def add_business_matches(df, voa_businesses):
     - Matching is exact and case-sensitive
     """
     
-    # Create a copy to avoid modifying the original
+    def add_match_column(enhanced_df, match_columns, result_column):
+        """Helper function to add a single match column."""
+        # Check for non-null values in all required columns
+        has_required_data = enhanced_df[match_columns].notna().all(axis=1)
+        
+        if has_required_data.sum() > 0:
+            # Get reference data and merge
+            reference_data = voa_businesses[match_columns].dropna().drop_duplicates()
+            subset_data = enhanced_df[has_required_data]
+            
+            merged = subset_data.merge(
+                reference_data,
+                on=match_columns,
+                how='left',
+                indicator='_merge_indicator'
+            )
+            
+            # Update the result column where matches were found
+            match_found_mask = merged['_merge_indicator'] == 'both'
+            if match_found_mask.sum() > 0:
+                matched_indices = enhanced_df.index[has_required_data][match_found_mask]
+                enhanced_df.loc[matched_indices, result_column] = True
+    
+    # Create a copy and initialize columns
     enhanced_df = df.copy()
     
-    # Initialize the new columns
-    enhanced_df['building_match'] = False
-    enhanced_df['street_match'] = False
-    enhanced_df['number_match'] = False
+    # Define the matching configurations
+    match_configs = [
+        (['oa11cd'], 'oa_match'),
+        (['lsoa11cd'], 'lsoa_match'),
+        (['building_name', 'lad11cd'], 'building_match'),
+        (['street_name2', 'lad11cd'], 'street_match'),
+        (['street_number', 'street_name2', 'lad11cd'], 'number_match')
+    ]
     
-    # Building match
-    has_building_and_lad = (enhanced_df['building_name'].notna() & 
-                           enhanced_df['lad11cd'].notna())
+    # Initialize all result columns
+    for _, result_column in match_configs:
+        enhanced_df[result_column] = False
     
-    if has_building_and_lad.sum() > 0:
-        building_data = enhanced_df[has_building_and_lad].copy()
-        building_match_df = voa_businesses[['building_name', 'lad11cd']].dropna().drop_duplicates()
-        
-        merged_buildings = building_data.merge(
-            building_match_df, 
-            on=['building_name', 'lad11cd'], 
-            how='left', 
-            indicator='_building_merge'
-        )
-        
-        match_found_mask = merged_buildings['_building_merge'] == 'both'
-        if match_found_mask.sum() > 0:
-            building_indices = enhanced_df.index[has_building_and_lad][match_found_mask]
-            enhanced_df.loc[building_indices, 'building_match'] = True
-    
-    # Street match
-    has_street_and_lad = (enhanced_df['street_name2'].notna() & 
-                         enhanced_df['lad11cd'].notna())
-    
-    if has_street_and_lad.sum() > 0:
-        street_data = enhanced_df[has_street_and_lad].copy()
-        street_match_df = voa_businesses[['street_name2', 'lad11cd']].dropna().drop_duplicates()
-        
-        merged_streets = street_data.merge(
-            street_match_df, 
-            on=['street_name2', 'lad11cd'], 
-            how='left', 
-            indicator='_street_merge'
-        )
-        
-        match_found_mask = merged_streets['_street_merge'] == 'both'
-        if match_found_mask.sum() > 0:
-            street_indices = enhanced_df.index[has_street_and_lad][match_found_mask]
-            enhanced_df.loc[street_indices, 'street_match'] = True
-    
-    # Street number match
-    has_number_street_and_lad = (enhanced_df['street_number'].notna() & 
-                                enhanced_df['street_name2'].notna() & 
-                                enhanced_df['lad11cd'].notna())
-    
-    if has_number_street_and_lad.sum() > 0:
-        number_data = enhanced_df[has_number_street_and_lad].copy()
-        number_match_df = voa_businesses[['street_number', 'street_name2', 'lad11cd']].dropna().drop_duplicates()
-        
-        merged_numbers = number_data.merge(
-            number_match_df, 
-            on=['street_number', 'street_name2', 'lad11cd'], 
-            how='left', 
-            indicator='_number_merge'
-        )
-        
-        match_found_mask = merged_numbers['_number_merge'] == 'both'
-        if match_found_mask.sum() > 0:
-            number_indices = enhanced_df.index[has_number_street_and_lad][match_found_mask]
-            enhanced_df.loc[number_indices, 'number_match'] = True
+    # Apply matching for each configuration
+    for match_columns, result_column in match_configs:
+        add_match_column(enhanced_df, match_columns, result_column)
     
     return enhanced_df
 
-
-def property_class(df):
+def property_class(df, rules, include_rule_name=True):
     """
-    Create a hierarchical classification of property types using logical rules.
-    
-    Applies a series of pattern-matching conditions to classify properties into
-    categories such as land, carpark, airspace, residential, business, or unknown
-    based on property address patterns, building names, and matching indicators.
+    Create a hierarchical classification of property types using configurable rules.
     
     Parameters
     ----------
     df : pandas.DataFrame
         Input dataframe containing property data to be classified.
+    rules : list of dict
+        List of classification rules. Each rule dict should contain:
+        - 'rule_name': string description
+        - 'condition': lambda function that takes df and returns boolean Series
+        - 'class': string of class name to assign
+        - 'comments': optional comments for documentation
+    include_rule_name : bool, default True
+        If True, adds a 'matched_rule' column showing which rule was applied
+        (stored as categorical for memory efficiency)
     
     Returns
     -------
     pandas.DataFrame
         Input dataframe with additional 'class' column containing the
-        property classification.
+        property classification. If include_rule_name=True, also includes
+        'matched_rule' column with the rule name as categorical data.
+        
+    Raises
+    ------
+    ValueError
+        If rule names are not unique when include_rule_name=True
     """
 
-    df["class"] = np.select(
-        [
-            df["property_address"].str.contains(r"^(?:land|plot)", case=False),
-            df["property_address"].str.contains(
+    df = df.copy()
+    
+    # Check for unique rule names if we're including them
+    if include_rule_name:
+        rule_names = [rule['rule_name'] for rule in rules]
+        if len(rule_names) != len(set(rule_names)):
+            duplicates = [name for name in rule_names if rule_names.count(name) > 1]
+            raise ValueError(f"Rule names must be unique. Duplicates found: {set(duplicates)}")
+    
+    conditions = []
+    choices = []
+    rule_names = []
+    
+    for rule in rules:
+        try:
+            condition = rule['condition'](df)
+            conditions.append(condition)
+            choices.append(rule['class'])
+            if include_rule_name:
+                rule_names.append(rule['rule_name'])
+        except Exception as e:
+            print(f"Warning: Rule '{rule['rule_name']}' failed: {e}")
+            continue
+    
+    # Handle case where no valid conditions exist
+    if len(conditions) == 0:
+        df["class"] = "unknown"
+        if include_rule_name:
+            df["matched_rule"] = pd.Categorical(["none"] * len(df), categories=["none"])
+    else:
+        df["class"] = np.select(conditions, choices, default="unknown")
+        if include_rule_name:
+            # Create categorical with all possible rule names plus "none" as categories
+            all_categories = rule_names + ["none"]
+            matched_rules = np.select(conditions, rule_names, default="none")
+            df["matched_rule"] = pd.Categorical(matched_rules, categories=all_categories)
+    
+    return df
+
+
+def get_default_property_rules():
+    """Defines the default property classification rules."""
+    
+
+    return [
+        {
+            'rule_name': 'Land plots at start of address',
+            'condition': lambda df: df["property_address"].str.contains(r"^(?:land|plot)", case=False),
+            'class': 'land',
+            'comments': 'Identifies properties starting with "land" or "plot"'
+        },
+        {
+            'rule_name': 'Parking and garage spaces',
+            'condition': lambda df: df["property_address"].str.contains(
                 r"^(?:[a-z\s]*)(?:garage|parking(?:\s)?space|parking space|car park(?:ing)?)",
-                case=False,
+                case=False
             ),
-            df["property_address"].str.contains(
-                r"^(?:the airspace|airspace)", case=False
+            'class': 'carpark',
+            'comments': 'Identifies parking spaces, garages, and car parks'
+        },
+        {
+            'rule_name': 'Airspace properties',
+            'condition': lambda df: df["property_address"].str.contains(
+                r"^(?:the airspace|airspace|air space)", case=False
             ),
-            df["property_address"].str.contains(
+            'class': 'airspace',
+            'comments': 'Properties related to airspace rights'
+        },
+        {
+            'rule_name': 'Penthouse/Flat/Apartment',
+            'condition': lambda df: df["property_address"].str.contains(
                 r"penthouse|flat|apartment", case=False
             ),
-            ~df["street_match"],# If there is no business on the street then it must be a residential
-            df["property_address"].str.contains(
-                r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|^store(?:s)?\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)",
-                case=False,
+            'class': 'residential',
+            'comments': 'Clear residential indicators like penthouse, flat, apartment'
+        },
+        {
+            'rule_name': 'Business properties by address keywords',
+            'condition': lambda df: df["property_address"].str.contains(
+                r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|^store(?:s|rooms?)\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)|(vault)",
+                case=False
             ),
-            df["property_address"].str.contains(
+            'class': 'business',
+            'comments': 'Business properties identified by commercial keywords in address'
+        },
+        {
+            'rule_name': 'Land with words before it',
+            'condition': lambda df: df["property_address"].str.contains(
                 r"^[a-z\s']+\b(?:land(?:s)?|plot(?:s)?)\b", case=False
-            ),  # land with words before it
-            df["building_name"].str.contains(
-                r"\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)",
+            ),
+            'class': 'land',
+            'comments': 'Land or plots that have descriptive words before them'
+        },
+        {
+            'rule_name': 'Pubs by building name',
+            'condition': lambda df: df["building_name"].str.contains(
+                r"\binn$|public house|^the\s\w+\sand\s\w+|(?:tavern$)|^the\s+(?:red|white|black|blue|green|golden|silver|old|royal)\s+\w+$",
                 case=False,
-                na=False,
-            ),  # pubs in various guises
-            df['building_name'].notna() & df['street_number'].str.contains(xx_to_yy_regex, na=False)  & df['unit_id'].isna(), # A named building which crosses multiple street addresses but doesn't have sub-units is a business
-            df["building_match"],  # a business building was matched
-            df["number_match"], # The street and number of a business was matched
-         ],
-        [
-            "land",
-            "carpark",
-            "airspace",
-            "residential",
-            "residential",
-            "business",
-            "land",
-            'business',
-            "business",
-            "business",
-            "business",
-        ],
-        default="unknown",
-    )
+                na=False
+            ),
+            'class': 'business',
+            'comments': 'Pubs identified by building name patterns'
+        },
+        {
+            'rule_name': 'Named building crossing multiple addresses',
+            'condition': lambda df: (
+                df['building_name'].notna() & 
+                df['street_number'].str.contains(xx_to_yy_regex, na=False) & 
+                df['unit_id'].isna()
+            ),
+            'class': 'business',
+            'comments': 'Named building which crosses multiple street addresses but has no sub-units'
+        },
+        {
+            'rule_name': 'Addresses starting with part/parts',
+            'condition': lambda df: df["property_address"].str.contains(r"^(?:part|parts)\b", case=False),
+            'class': 'business',
+            'comments': 'Addresses starting with "part" or "parts" are typically businesses'
+        },
+        {
+            'rule_name': 'Units without building name',
+            'condition': lambda df: (
+                df["property_address"].str.contains(r"\b(?:unit|units)\b", case=False) & 
+                df["building_name"].isna()
+            ),
+            'class': 'business',
+            'comments': 'Properties with "unit" or "units" but no building name are businesses'
+        },
+        {
+            'rule_name': 'Building match indicator',
+            'condition': lambda df: df["building_match"] == True,
+            'class': 'business',
+            'comments': 'Properties where a business building was matched'
+        },
+        {
+            'rule_name': 'Number match indicator',
+            'condition': lambda df: df["number_match"] == True,
+            'class': 'business',
+            'comments': 'Properties where the street and number of a business was matched'
+        },
+        {
+            'rule_name': 'No street match (residential default)',
+            'condition': lambda df: df["street_match"] == False,
+            'class': 'residential',
+            'comments': 'If there is no business on the street then it must be residential'
+        },
+            {
+            'rule_name': 'oa match',
+            'condition': lambda df: df["oa_match"] == False,
+            'class': 'residential',
+            'comments': 'If there is no business in the oa then it must be residential'
+        },
+                    {
+            'rule_name': 'lsoa match',
+            'condition': lambda df: df["lsoa_match"] == False,
+            'class': 'residential',
+            'comments': 'If there is no business in the lsoa then it must be residential'
+        }
 
-    return df
 
-def property_class_no_match(df):
+    ]
+
+
+def fill_unknown_classes_by_group(df, group_col='title_number', class_col='class', 
+                                 unknown_value='unknown', exclude_classes=None, 
+                                 condition_col='is_multi', unique_id_col='unique_id'):
     """
-    Perform additional property classification for previously unmatched properties.
+    Fill unknown class values using known class values from the same group.
     
-    A more permissive classification approach that treats unmatched addresses
-    with street numbers as residential properties when they don't match known
-    business addresses but do match street patterns. This represents an upper
-    bound estimate for residential property counts.
-    
-    Note: This function should be run after property_class() has been applied.
-    
-    Parameters
-    ----------
+    Parameters:
+    -----------
     df : pandas.DataFrame
-        Input dataframe that has already been processed by property_class().
-    
-    Returns
-    -------
+        The input dataframe
+    group_col : str, default 'title_number'
+        Column to group by when filling unknown values
+    class_col : str, default 'class'
+        Column containing the classification values
+    unknown_value : str, default 'unknown'
+        Value representing unknown/missing classifications
+    exclude_classes : list, default None
+        List of class values to exclude from being used as fill sources
+    condition_col : str, default 'within_larger_title'
+        Additional condition column that must be True for filling
+    unique_id_col : str, default 'unique_id'
+        Column containing unique identifiers for each row
+        
+    Returns:
+    --------
     pandas.DataFrame
-        Input dataframe with additional 'class_no_match' column containing
-        the updated property classification.
+        DataFrame with unknown values filled where possible
     """
-    df["class_no_match"] = np.where(
-        (df["class"] == "unknown") & 
-        (~df["number_match"]) & 
-        df["street_match"] & 
-        df['street_number'].notna(),
-        "residential",
-        df["class"]
+    if exclude_classes is None:
+        exclude_classes = ["unknown", "airspace", "carpark"]
+    
+    # Step 1: Create lookup table of known classifications by group
+    lookup_conditions = (
+        ~df[class_col].isin(exclude_classes) & 
+        df[condition_col].fillna(False)
     )
     
+    lookup_table = (
+        df[lookup_conditions]
+        .groupby([group_col, class_col])
+        .size()
+        .reset_index()[[group_col, class_col]]
+        .drop_duplicates()
+    )
+    
+    # Step 2: Find records that can be filled
+    fill_conditions = (
+        df[group_col].isin(lookup_table[group_col]) & 
+        (df[class_col] == unknown_value) & 
+        df[condition_col].fillna(False)
+    )
+    
+    records_to_fill = df[fill_conditions].copy()
+    
+    if records_to_fill.empty:
+        return df  # No records to fill
+    
+    # Step 3: Fill unknown classifications
+    records_to_fill = records_to_fill.drop(class_col, axis=1)
+    records_to_fill = records_to_fill.merge(lookup_table, how='left', on=group_col)
+    
+    # Step 4: Combine with unchanged records
+    unchanged_records = df[~df[unique_id_col].isin(records_to_fill[unique_id_col])]
+    result = pd.concat([records_to_fill, unchanged_records], ignore_index=True)
+    
+    return result
+
+def evaluate_classification_predictions(gt_df, pred_df):
+    """
+    Evaluate classification predictions and return classification report.
+
+    Args:
+        gt_df: DataFrame with columns ['title_number', 'class'] containing ground truth
+        pred_df: DataFrame with columns ['title_number', 'class'] containing predictions
+
+    Returns:
+        str: Classification report
+    """
+    
+    # Join the dataframes on title_number
+    merged_df = gt_df.merge(pred_df, on='title_number', suffixes=('_true', '_pred'))
+    
+    # Check if we lost any examples in the merge
+    if len(merged_df) != len(gt_df):
+        print(f"Warning: Ground truth has {len(gt_df)} examples, but only {len(merged_df)} matched predictions")
+    
+    # Extract true and predicted labels
+    y_true = merged_df['class_true'].tolist()
+    y_pred = merged_df['class_pred'].tolist()
+    
+    # Calculate metrics (using macro average to match typical classification evaluation)
+    overall_f1 = f1_score(y_true, y_pred, average='macro')
+    overall_precision = precision_score(y_true, y_pred, average='macro')
+    overall_recall = recall_score(y_true, y_pred, average='macro')
+
+    # Print results
+    print(f"Overall F1: {overall_f1:.4f}")
+    print(f"Overall Precision: {overall_precision:.4f}")
+    print(f"Overall Recall: {overall_recall:.4f}")
+    print("\nPer-class results:")
+    print(classification_report(y_true, y_pred))
+
+    class_dict = classification_report(y_true, y_pred, output_dict=True )
+    df = pd.DataFrame(class_dict).transpose()
+
     return df
+
+def drop_non_residential_duplicates(df, class_col='class'):
+    """
+    Drop duplicates based on title_number and class columns for all rows 
+    that are not residential, while keeping all residential rows.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        Input dataframe
+    class_col : str, default 'class'
+        Name of the class column
+    
+    Returns:
+    --------
+    pandas.DataFrame
+        Dataframe with duplicates removed from non-residential rows
+    """
+    
+    # Separate residential and non-residential rows
+    residential_rows = df[df[class_col] == 'residential']
+    non_residential_rows = df[df[class_col] != 'residential']
+    
+    # Drop duplicates on non-residential rows
+    non_residential_deduped = non_residential_rows.drop_duplicates(subset=['title_number', class_col])
+    
+    # Combine back together
+    result_df = pd.concat([residential_rows, non_residential_deduped], ignore_index=True)
+    
+    return result_df
+

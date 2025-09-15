@@ -61,12 +61,13 @@ from enhance_ocod.address_parsing import (
 )
 from enhance_ocod.locate_and_classify import (
     load_voa_ratinglist,
-    counts_of_businesses_per_oa_lsoa, # Not currently used
     add_geographic_metadata,
     enhance_ocod_with_gazetteers,
     add_business_matches,
     property_class,
-    property_class_no_match
+    get_default_property_rules,
+    fill_unknown_classes_by_group,
+    drop_non_residential_duplicates
     )
 
 from enhance_ocod.price_paid_process import check_and_preprocess_price_paid_data, gazetteer_generator
@@ -92,7 +93,7 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 
 # ====== CONSTANT PATHS AND SETTINGS ======
 input_dir = SCRIPT_DIR.parent / "data" / "ocod_history"
-output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed_new"
+output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
 model_path = (
     SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
 )
@@ -119,6 +120,7 @@ parsed_results_dir.mkdir(parents=True, exist_ok=True)
 print("Loading common reference data...")
 postcode_district_lookup = load_postcode_district_lookup(str(ONSPD_path))
 voa_businesses = load_voa_ratinglist(str(voa_path), postcode_district_lookup)
+
 
 check_and_preprocess_price_paid_data(str(price_paid_path), postcode_district_lookup, str(processed_price_paid_dir))
 
@@ -248,6 +250,8 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
                 "country_incorporated",
             ]
         ]
+    # just to minimise memory overhead
+    del ocod_data
 
     #################v
     #
@@ -266,19 +270,27 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
 
     with_matches = add_business_matches(enhanced, voa_businesses)
 
-    #################v
+    #This created a temptorary ID before the real expansion phase, it allows
+    # titles spread over multiple rows to have the same class.
+    # It will be overwritten later
+    with_matches = create_unique_id(with_matches)
+
+    #################
     #
     # Classify and expand the rows
     #
     ################   
 
-    classified = property_class(with_matches)
-
-    classified = property_class_no_match(classified)
-
-    expanded_df = expand_dataframe_numbers(classified, class_var = 'class', print_every=10000, min_count=1)
-
-    expanded_df = create_unique_id(expanded_df)
+    rules = get_default_property_rules()
+    classified  = property_class(with_matches.copy(), rules, include_rule_name=True)
+    # fill the classes that are unknown but part of a larger title_number group 
+    classified = fill_unknown_classes_by_group(classified)
+    # Only residential properties should be expanded so drop all other multiple title_numbers
+    classified = drop_non_residential_duplicates(classified, class_col='class')
+    # Expand the residential class
+    ocod_data = expand_dataframe_numbers(classified, class_var = 'class', print_every=10000, min_count=1)
+    # Update the unique id
+    ocod_data = create_unique_id(ocod_data)
 
     columns = [
         "title_number",
@@ -300,11 +312,12 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         "lad11cd",
         "country_incorporated",
         "class",
-        "needs_expansion",
+        "matched_rule",
+        "is_multi",
     ]
 
 
-    ocod_data = expanded_df.loc[:, columns]
+    ocod_data = ocod_data.loc[:, columns]
     # Save results
     ocod_data.to_parquet(out_path)
     print(f"Saved processed data to {out_path}")
