@@ -77,6 +77,7 @@ def process_dataframe_batch(
     save_intermediate: bool = False,
     output_dir: Optional[str] = None,
     verbose: bool = True,
+    functions: Optional[List] = None,
 ) -> List[Dict[str, Any]]:
     """
     Process a dataframe in batches, applying labelling functions to each row.
@@ -89,6 +90,7 @@ def process_dataframe_batch(
         save_intermediate: Whether to save each batch to disk
         output_dir: Directory to save intermediate results (required if save_intermediate=True)
         verbose: Whether to show progress bars
+        functions: List of labelling functions to apply (default: None, uses lfs)
 
     Returns:
         List of results in training format
@@ -99,6 +101,10 @@ def process_dataframe_batch(
 
     if save_intermediate:
         Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Use default labelling functions if none provided
+    if functions is None:
+        functions = lfs
 
     all_results = []
     total_batches = (len(df) + batch_size - 1) // batch_size
@@ -127,7 +133,9 @@ def process_dataframe_batch(
         for datapoint_id, (_, row) in enumerate(batch_df.iterrows()):
             try:
                 result = apply_labelling_functions_to_row(
-                    row, include_function_name=include_function_name
+                    row, 
+                    include_function_name=include_function_name,
+                    functions = functions
                 )
 
                 # Add metadata for tracking
