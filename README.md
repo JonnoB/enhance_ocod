@@ -132,7 +132,7 @@ Several Jupyter notebooks are included for development and analysis (located in 
 
 ## Pre-trained NER model
 
-The fine-tuned modernBERT model is available from huggingface [https://huggingface.co/Jonnob/OCOD_NER]. The model can be run directly on address strings using huggingface 'pipeline' functionality, see the (model card)[https://huggingface.co/Jonnob/OCOD_NER] for details.
+The fine-tuned modernBERT model is available to [download](https://huggingface.co/Jonnob/OCOD_NER) from huggingface. The model can be run directly on address strings using huggingface 'pipeline' functionality, see the [model card](https://huggingface.co/Jonnob/OCOD_NER) for details.
 
 ## Contributing
 Contributions and suggestions are welcome! Please open issues or pull requests.
