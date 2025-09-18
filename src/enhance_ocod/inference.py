@@ -162,7 +162,7 @@ def _calculate_summary(addresses: List[str], results: List[Dict], **kwargs) -> D
 
 def parse_addresses_basic(
     df: pd.DataFrame,
-    model_path: str,
+    model_path: str = "Jonnob/OCOD_NER",
     target_column: str = "address",
     batch_size: int = 512,
     device: Optional[int] = None,
@@ -227,7 +227,7 @@ def parse_addresses_basic(
 
 def parse_addresses_pipeline(
     df: pd.DataFrame,
-    model_path: str,
+    model_path: str = "Jonnob/OCOD_NER",
     target_column: str = "address",
     short_batch_size: int = 2048,
     long_batch_size: int = 32,

@@ -58,9 +58,9 @@ from sklearn.metrics import (
     f1_score, 
     precision_score, 
     recall_score, 
-    classification_report
+    classification_report,
+    accuracy_score
 )
-
 
 def load_postcode_district_lookup(file_path, target_post_area=None):
     """
@@ -379,6 +379,30 @@ def add_geographic_metadata(df, postcode_district_lookup):
 
     return df
 
+def forward_fill_by_title(df):
+    """Forward fill missing geography columns within a title_number
+    This function is used by enhance_ocod_with_gazetteers and is not intended for general use.
+    """
+    
+    geog_cols = ['oa11cd', 'msoa11cd', 'lad11cd', 'match_prob']
+    
+    # Sort by title_number and geog_match (building matches first)
+    df_sorted = df.sort_values(['title_number', 'geog_match'], na_position='last')
+    
+    # Forward fill within each title_number group
+    df_sorted[geog_cols] = (
+        df_sorted.groupby('title_number')[geog_cols]
+        .ffill()
+    )
+    
+    # Also forward fill geog_match for newly filled rows
+    df_sorted['geog_match'] = (
+        df_sorted.groupby('title_number')['geog_match']
+        .ffill()
+    )
+    
+    return df_sorted.sort_index()  # Restore original order
+
 
 def enhance_ocod_with_gazetteers(pre_process_ocod, building_gazetteer, district_gazetteer, street_gazetteer):
     """
@@ -482,10 +506,11 @@ def enhance_ocod_with_gazetteers(pre_process_ocod, building_gazetteer, district_
                          enhanced_ocod['lad11cd'].notna())
     street_fillable_mask = missing_lsoa_mask & has_street_and_lad
     
+    # Street matches do not fill in the oa as they are likely to cross these.
     if street_fillable_mask.sum() > 0:
         street_data = enhanced_ocod[street_fillable_mask].copy()
         merged_streets = street_data.merge(
-            street_gazetteer_lower[['street_name2', 'lad11cd', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'fraction']], 
+            street_gazetteer_lower[['street_name2', 'lad11cd', 'lsoa11cd', 'msoa11cd', 'fraction']], 
             on=['street_name2', 'lad11cd'], 
             how='left', 
             suffixes=('', '_new')
@@ -496,12 +521,14 @@ def enhance_ocod_with_gazetteers(pre_process_ocod, building_gazetteer, district_
         if match_found_mask.sum() > 0:
             street_indices = enhanced_ocod.index[street_fillable_mask][match_found_mask]
             
-            for col in ['oa11cd', 'lsoa11cd', 'msoa11cd']:
+            for col in ['lsoa11cd', 'msoa11cd']:
                 enhanced_ocod.loc[street_indices, col] = merged_streets.loc[match_found_mask, f'{col}_new'].values
             
             enhanced_ocod.loc[street_indices, 'match_prob'] = merged_streets.loc[match_found_mask, 'fraction'].values
             enhanced_ocod.loc[street_indices, 'geog_match'] = 'street'
-    
+
+    enhanced_ocod = forward_fill_by_title(enhanced_ocod)
+
     # Convert geog_match to categorical for memory efficiency
     enhanced_ocod['geog_match'] = enhanced_ocod['geog_match'].astype('category')
     
@@ -697,7 +724,7 @@ def get_default_property_rules():
         {
             'rule_name': 'Business properties by address keywords',
             'condition': lambda df: df["property_address"].str.contains(
-                r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|^store(?:s|rooms?)\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)|(vault)",
+                r"cinema|hotel|office|centre|\bpub|holiday(?:\s)?inn|travel lodge|travelodge|medical|business|cafe|^shop| shop|service|logistics|building supplies|restaurant|home|suite|^store(?:s|rooms?)\b|^storage\b|company|ltd|limited|plc|retail|leisure|industrial|hall of|trading|commercial|technology|works|club,|advertising|school|church|(?:^room)|vault",
                 case=False
             ),
             'class': 'business',
@@ -759,7 +786,7 @@ def get_default_property_rules():
             'comments': 'Properties where the street and number of a business was matched'
         },
         {
-            'rule_name': 'No street match (residential default)',
+            'rule_name': 'No street match',
             'condition': lambda df: df["street_match"] == False,
             'class': 'residential',
             'comments': 'If there is no business on the street then it must be residential'
@@ -865,7 +892,7 @@ def evaluate_classification_predictions(gt_df, pred_df):
     
     # Check if we lost any examples in the merge
     if len(merged_df) != len(gt_df):
-        print(f"Warning: Ground truth has {len(gt_df)} examples, but only {len(merged_df)} matched predictions")
+        print(f"Warning: Ground truth has {len(gt_df)} examples, But there are {len(merged_df)} matched predictions")
     
     # Extract true and predicted labels
     y_true = merged_df['class_true'].tolist()
@@ -917,4 +944,33 @@ def drop_non_residential_duplicates(df, class_col='class'):
     result_df = pd.concat([residential_rows, non_residential_deduped], ignore_index=True)
     
     return result_df
+
+
+def get_performance_by_rule(df):
+    """Calculate performance metrics for property classification rule separately"""
+    
+    results = []
+    
+    for rule in df['matched_rule'].unique():
+        rule_data = df[df['matched_rule'] == rule]
+        
+        # Skip if rule has no predictions
+        if len(rule_data) == 0:
+            continue
+            
+        accuracy = accuracy_score(rule_data['class_true'], rule_data['class_pred'])
+        precision = precision_score(rule_data['class_true'], rule_data['class_pred'], average='weighted', zero_division=0)
+        recall = recall_score(rule_data['class_true'], rule_data['class_pred'], average='weighted', zero_division=0)
+        f1 = f1_score(rule_data['class_true'], rule_data['class_pred'], average='weighted', zero_division=0)
+        
+        results.append({
+            'rule': rule,
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'sample_count': len(rule_data)
+        })
+    
+    return pd.DataFrame(results).sort_values('f1_score', ascending=False)
 

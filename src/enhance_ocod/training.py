@@ -29,41 +29,8 @@ Dependencies:
     - numpy: For array operations
 
 Data Format:
-    Expected JSON input format for NER data:
-    [
-        {
-            "text": "John Smith works at Google in California",
-            "spans": [
-                {"start": 0, "end": 10, "label": "PERSON"},
-                {"start": 20, "end": 26, "label": "ORG"},
-                {"start": 30, "end": 40, "label": "LOC"}
-            ]
-        }
-    ]
 
-Example Usage:
-    >>> # Create label list
-    >>> entity_types = ['PERSON', 'ORG', 'LOC']
-    >>> labels = create_label_list(entity_types)
-    >>>
-    >>> # Initialize processor
-    >>> processor = NERDataProcessor(labels)
-    >>>
-    >>> # Load and process data
-    >>> train_data = processor.load_json_data('train.json')
-    >>> train_dataset = processor.create_dataset(train_data, max_length=128)
-    >>>
-    >>> # Evaluate trained model
-    >>> evaluate_model_performance(
-    ...     model_path='./trained_model',
-    ...     data_path='test.json',
-    ...     output_dir='./results',
-    ...     dataset_name='test'
-    ... )
 
-Author: [Your Name]
-Version: 1.0
-License: [Your License]
 """
 
 import json
@@ -107,17 +74,6 @@ class NERDataProcessor:
         >>> data = processor.load_json_data('train.json')
         >>> dataset = processor.create_dataset(data, max_length=128)
 
-    Note:
-        Expected JSON data format:
-        [
-            {
-                "text": "John lives in New York",
-                "spans": [
-                    {"start": 0, "end": 4, "label": "PERSON"},
-                    {"start": 14, "end": 22, "label": "LOCATION"}
-                ]
-            }
-        ]
     """
 
     def __init__(

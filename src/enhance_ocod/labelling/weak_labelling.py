@@ -356,9 +356,6 @@ def convert_weakly_labelled_list_to_dataframe(
         }
     )
 
-    print("✓ Named Entity Recognition processing complete")
-    print(f"Total entities extracted: {len(all_entities):,}")
-
     return all_entities
 
 

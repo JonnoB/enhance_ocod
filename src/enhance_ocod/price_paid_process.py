@@ -50,6 +50,9 @@ import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 from enhance_ocod.locate_and_classify import clean_street_numbers
+from enhance_ocod.labelling.weak_labelling import (process_dataframe_batch, 
+remove_overlapping_spans, remove_zero_length_spans, convert_weakly_labelled_list_to_dataframe )
+from enhance_ocod.labelling.ner_spans import lfs
 from pandas.api.types import CategoricalDtype
 import re
 from datetime import datetime
@@ -661,16 +664,19 @@ def gazetteer_generator(price_paid_folder='../data/processed_price_paid'):
     if building_data:
         building_combined = pd.concat(building_data, ignore_index=True).drop_duplicates()
         
+        # CONVERT TO LOWERCASE FIRST, BEFORE GROUPBY
+        building_combined['text'] = building_combined['text'].str.lower()
+        
         # Get counts for each building-lad-lsoa combination
         building_counts = (building_combined.groupby(['text', 'lad11cd', 'lsoa11cd', 'oa11cd', 'msoa11cd'], observed=True)
-                          .size()
-                          .reset_index(name='counts'))
+                        .size()
+                        .reset_index(name='counts'))
         
         # Calculate total counts per building-lad combination for fraction calculation
         building_totals = (building_counts.groupby(['text', 'lad11cd'], observed=True)['counts']
-                          .sum()
-                          .reset_index()
-                          .rename(columns={'counts': 'total_counts'}))
+                        .sum()
+                        .reset_index()
+                        .rename(columns={'counts': 'total_counts'}))
         
         # Merge to get total counts and calculate fraction
         building_counts = building_counts.merge(building_totals, on=['text', 'lad11cd'])
@@ -678,12 +684,12 @@ def gazetteer_generator(price_paid_folder='../data/processed_price_paid'):
         
         # For each building-lad combination, keep the LSOA with the highest count
         building_gazetteer = (building_counts.sort_values('counts', ascending=False)
-                             .groupby(['text', 'lad11cd'], observed=True)
-                             .first()
-                             .reset_index()[['text', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd', 'fraction']])
+                            .groupby(['text', 'lad11cd'], observed=True)
+                            .first()
+                            .reset_index()[['text', 'oa11cd', 'lsoa11cd', 'msoa11cd', 'lad11cd', 'fraction']])
         
         building_gazetteer = building_gazetteer.loc[building_gazetteer['text']!='<na>']
-        building_gazetteer['text'] = building_gazetteer['text'].str.lower()
+        
         # Remove repetitive names with low uniqueness
         building_gazetteer = building_gazetteer[building_gazetteer['fraction']>0.2]
         building_gazetteer.rename(columns={'text':'building_name'}, inplace=True)

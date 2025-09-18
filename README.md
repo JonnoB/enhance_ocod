@@ -1,7 +1,5 @@
 # Enhanced OCOD: Offshore Companies Ownership Data Processing Pipeline
 
-## This repo is currently undergoing a major overhaul, beware if using at the moment.
-
 ## Overview
 This repository provides a comprehensive pipeline and Python library for cleaning, enhancing, and analyzing the UK Land Registry's Offshore Companies Ownership Data (OCOD). The enhanced OCOD dataset resolves many issues with the raw OCOD data, making it suitable for research, analysis, and reporting on UK property owned by offshore companies.
 
@@ -15,7 +13,7 @@ The project includes:
 - **Advanced Address Parsing:** Disaggregates multi-property titles and parses free-text addresses
 - **Integration with External Data:** Uses ONS Postcode Directory, Land Registry Price Paid Data, and VOA business ratings for enrichment
 - **Property Classification:** Assigns properties to categories (Residential, Business, Airspace, Land, Carpark, Unknown)
-- **NER Model Training & Weak Labelling:** Tools for custom NER models and weak supervision
+- **NER Model Training & Weak Labelling:** Fine-tuned modernBERT model automaticall downloaded from [HF](https://huggingface.co/Jonnob/OCOD_NER)
 - **Reproducible & Extensible:** Library-based design for maintainability and reuse
 
 ## Project Structure
@@ -74,49 +72,67 @@ You can use the project in two main ways:
 ### 1. As a Library
 Import modules from `src/enhance_ocod` in your own scripts:
 ```python
-from enhance_ocod.inference import test_single_address
+import pandas as pd
+from enhance_ocod.inference import parse_addresses_basic
 
-test_single_address(address="36 - 49, chapel street, London, se45 6pq")
+# Create example DataFrame with the two addresses
+example_df = pd.DataFrame({
+    'address': [
+        "36 - 49, chapel street, London, se45 6pq",
+        "Flat 14a, 14 Barnsbury Road, London N1 1JU"
+    ],
+    'datapoint_id': ['addr_001', 'addr_002']  # Optional unique identifiers
+})
+
+print("Example DataFrame:")
+print(example_df)
+
+# Default behaviour is to download the finetuned model from Hugginface model library.
+results = parse_addresses_basic(example_df)
+print(f"Parsed {results['summary']['successful_parses']} addresses")
 # ...
 ```
 
 ### 2. Using Provided Scripts
 - **Run the full pipeline:**
   ```bash
-  python full_ocod_parse_process.py ./data/ OCOD.csv OCOD_enhanced.csv
+  python parse_ocod_history.py 
   ```
-  - Arguments: `<data_folder> <input_file> <output_file>` (all files must be in the data folder)
 
 - **Train an NER Model:**
   ```bash
   python scripts/run_experiments.py
   ```
 
-- **Other scripts:**
-  See the `scripts/` directory for additional utilities (e.g., `parse_ocod_history.py`, `model_test.py`, etc.)
-
 ### Order to run the scripts in
 
 - `download_hist.py`: Downloads the entire OCOD dataset history and saves by year as zip files. Requires a 'LANDREGISTRY_API' in the .env file.
 - `create_weak_labelling_data.py`: Using the regex rules weakly label the OCOD February 2022 data set
 - `ready_csv_for_training.py`: Create the datasets for training and evaluation of the models out of the development set, weakly labelled set and test set.
-- run_experiments.py: Using the dev and weakly labelled sets, train the ModernBERT models. The script also calls the `mbert_train_configurable.py` script.
-- `price_paide_msoa_averages.py`: Calculates the mean price per MSOA, for a rolling three years. 
+- `run_experiments.py`: Using the dev and weakly labelled sets, train the ModernBERT models. The script also calls the `mbert_train_configurable.py` script.
+- `parse_ocod_history`: Processes the entire history of the OCOD dataset. Using the pre-trained model can be run directly after `download_hist.py`
+- `price_paide_msoa_averages.py`: Calculates the mean price per MSOA, for a rolling three years. This is used by `price_paid_msoa_averages.ipynb
 
 ## Pipeline Stages
+
+The entire process containsed in `parse_ocod_history.py` is as follows
+
 1. **NER Labelling** using a pre-trained modernBERT model
-2. **Parsing** and expanding addresses
-3. **Disaggregation** so each row is a single property
-4. **Geographic Location** using ONS/OA system
+2. **Parsing** Create a dataframe using the entities
+3. **Geographic Location** using ONS/OA system
 5. **Classification** into property types
-6. **Cleanup** and deduplication
-7. **Saving** the enhanced dataset
+6. **Cleanup** Expand addresses that are actually multiple addresses (e.g. "Flats 3-10")
+7. **Contraction** ensure non-residential properties are only a single row
 
 ## Notebooks
 Several Jupyter notebooks are included for development and analysis (located in the `notebooks/` directory). These are primarily for the analysis used in the paper:
 - `notebooks/exploratory_analysis.ipynb`
 - `notebooks/price_paid_msoa.ipynb`
 - `notebooks/test_regex.ipynb`
+
+## Pre-trained NER model
+
+The fine-tuned modernBERT model is available from huggingface [https://huggingface.co/Jonnob/OCOD_NER]. The model can be run directly on address strings using huggingface 'pipeline' functionality, see the (model card)[https://huggingface.co/Jonnob/OCOD_NER] for details.
 
 ## Contributing
 Contributions and suggestions are welcome! Please open issues or pull requests.
@@ -127,7 +143,7 @@ If you use this repository, please cite:
 
 
 ## License
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the GNU 3.0 License. See the `LICENSE` file for details.
 
 ## Acknowledgements
 - The enhanced OCOD dataset and pipeline were demonstrated in the paper: [Inspecting the laundromat](https://doi.org/10.1177/23998083231155483)

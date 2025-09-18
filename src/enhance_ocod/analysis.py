@@ -62,18 +62,88 @@ def create_summarised_stats(list_of_files, class_var = 'class2'):
 
 
 def create_time_series_by_groups(msoa_dwellings, grouping_vars=None, 
-    class_var = 'class2',
-    ocod_path = '../data/ocod_history_processed', 
-    price_paid_path = '../data/price_paid_msoa_averages' ):
-    """
-    Create time series with optional grouping variables and dwelling data
+    class_var='class',
+    ocod_path='../data/ocod_history_processed', 
+    price_paid_path='../data/price_paid_msoa_averages'):
+    """Create aggregated residential property time series data by groups.
     
-    Args:
-        msoa_dwellings (pd.DataFrame): DataFrame with MSOA dwelling counts
-        grouping_vars (list or None): List of column names to group by (e.g., ['region'])
+    Processes OCOD (Overseas Companies Ownership Dataset) and price paid data
+    to create time series of residential property statistics. Properties without
+    MSOA codes are assigned LAD-level average prices to preserve absolute values
+    while maintaining representative pricing.
     
-    Returns:
-        pandas.DataFrame: Time series data with aggregated statistics
+    Parameters
+    ----------
+    msoa_dwellings : pd.DataFrame
+        DataFrame containing MSOA dwelling counts with 'msoa11cd' and 
+        'dwellings' columns.
+    grouping_vars : list of str, optional
+        Column names to group by for aggregation (e.g., ['region', 'county']).
+        If None, aggregates at MSOA level only. Default is None.
+    class_var : str, optional
+        Column name used to filter for residential properties. 
+        Default is 'class2'.
+    ocod_path : str or Path, optional
+        Path to directory containing OCOD parquet files. Files should be named
+        with pattern '*_YYYY_MM.parquet'. Default is '../data/ocod_history_processed'.
+    price_paid_path : str or Path, optional
+        Path to directory containing price paid parquet files. Files should be 
+        named 'price_paid_YYYY_MM.parquet'. Default is '../data/price_paid_msoa_averages'.
+    
+    Returns
+    -------
+    pd.DataFrame
+        Time series DataFrame with columns:
+        - date : datetime, first day of month
+        - year : int, year of data
+        - month : int, month of data
+        - ocod_mean : int, OCOD count-weighted mean price
+        - ocod_median : int, OCOD count-weighted median price
+        - dwelling_mean : int, dwelling count-weighted mean price
+        - dwelling_median : int, dwelling count-weighted median price
+        - ocod_ratio_mean : float, ratio of OCOD to dwelling weighted means
+        - ocod_total_counts : int, total count of OCOD residential properties
+        - total_dwelling_count : int, total dwelling count
+        - total_value_ocod_mean : int, total property value using OCOD weighting
+        - total_value_dwelling_mean : int, total property value using dwelling weighting
+        - fraction_of_total_value : float, fraction of total value represented by OCOD
+        - [grouping_vars] : additional columns if grouping_vars specified
+    
+    Notes
+    -----
+    - Only processes residential properties as defined by class_var
+    - Properties without MSOA codes are assigned 'UNKNOWN_[LAD_CODE]' identifiers
+      and given LAD-level average prices to preserve absolute property values
+    - Skips months where either OCOD or price paid data is missing
+    - Results are sorted by date and grouping variables
+    - Missing dwelling counts are filled with 0
+    
+    Warnings
+    --------
+    Prints warnings for:
+    - Missing price paid files
+    - Months with no residential properties
+    - Processing errors for individual files
+    - Properties without MSOA codes being assigned LAD averages
+    
+    Examples
+    --------
+    >>> # Basic usage - MSOA level aggregation
+    >>> result = create_time_series_by_groups(msoa_dwellings)
+    
+    >>> # Regional aggregation
+    >>> result = create_time_series_by_groups(
+    ...     msoa_dwellings, 
+    ...     grouping_vars=['region']
+    ... )
+    
+    >>> # Multiple grouping with custom paths
+    >>> result = create_time_series_by_groups(
+    ...     msoa_dwellings,
+    ...     grouping_vars=['region', 'county'],
+    ...     ocod_path='./data/ocod',
+    ...     price_paid_path='./data/prices'
+    ... )
     """
     ocod_path = Path(ocod_path)
     price_paid_path = Path(price_paid_path)
@@ -132,23 +202,109 @@ def _load_and_preprocess_data(ocod_file, price_paid_file, class_var = 'class2'):
     return ocod_residential, price_paid_df
 
 def _aggregate_time_series_data(ocod_df, price_paid_df, msoa_dwellings, year, month, grouping_vars):
-    """Aggregate time series data with optional grouping"""
-    # Determine grouping columns
-    group_cols = ['msoa11cd'] + (grouping_vars or [])
+    """Aggregate time series data with optional grouping, handling missing MSOA codes"""
     
-    # Group and count offshore properties
-    ocod_grouped = ocod_df.groupby(group_cols).size().reset_index(name='ocod_total_counts')
+    # Separate properties with and without MSOA codes
+    ocod_with_msoa = ocod_df[ocod_df['msoa11cd'].notna()].copy()
+    ocod_without_msoa = ocod_df[ocod_df['msoa11cd'].isna()].copy()
+    
+    # Process properties with MSOA codes normally
+    group_cols = ['msoa11cd'] + (grouping_vars or [])
+    ocod_grouped = ocod_with_msoa.groupby(group_cols).size().reset_index(name='ocod_total_counts')
     
     # Merge with price data and dwelling data
     df = price_paid_df.merge(ocod_grouped, on='msoa11cd', how='right')
     df = df.merge(msoa_dwellings, on='msoa11cd', how='left')
     df['ocod_total_counts'] = df['ocod_total_counts'].fillna(0).astype(int)
     
+    # Handle properties without MSOA codes
+    if not ocod_without_msoa.empty and 'lad21cd' in ocod_without_msoa.columns:
+        # Calculate LAD-level averages from existing MSOA data
+        lad_averages = _calculate_lad_averages(df, grouping_vars)
+        
+        # Create rows for unknown MSOA properties
+        unknown_rows = _create_unknown_msoa_rows(ocod_without_msoa, lad_averages, grouping_vars)
+        
+        # Append to main dataframe
+        if unknown_rows:
+            df = pd.concat([df, pd.DataFrame(unknown_rows)], ignore_index=True)
+    
     # Create date
     date = datetime(year, month, 1)
     
     # Perform aggregation based on grouping
     return _calculate_aggregations(df, date, year, month, grouping_vars)
+
+def _calculate_lad_averages(df, grouping_vars):
+    """Calculate LAD-level price averages for assigning to unknown MSOA properties"""
+    if 'lad21cd' not in df.columns:
+        return {}
+    
+    # Group by LAD (and other grouping vars if present)
+    lad_group_cols = ['lad21cd'] + (grouping_vars or [])
+    
+    lad_averages = {}
+    for group_key, group_df in df.groupby(lad_group_cols):
+        if isinstance(group_key, str):  # Single LAD grouping
+            lad_code = group_key
+            group_key = (group_key,)  # Make it a tuple for consistency
+        else:
+            lad_code = group_key[0]
+        
+        # Calculate weighted averages within the LAD
+        if group_df['ocod_total_counts'].sum() > 0:
+            weights = group_df['ocod_total_counts']
+            valid_prices = group_df[['price_mean', 'price_median']].notna().all(axis=1)
+            
+            if valid_prices.any():
+                weighted_mean = np.average(group_df.loc[valid_prices, 'price_mean'], 
+                                         weights=weights[valid_prices])
+                weighted_median = np.average(group_df.loc[valid_prices, 'price_median'], 
+                                           weights=weights[valid_prices])
+                
+                lad_averages[group_key] = {
+                    'price_mean': weighted_mean,
+                    'price_median': weighted_median
+                }
+    
+    return lad_averages
+
+def _create_unknown_msoa_rows(ocod_without_msoa, lad_averages, grouping_vars):
+    """Create rows for properties without MSOA codes using LAD averages"""
+    unknown_rows = []
+    
+    # Group by LAD (and other grouping vars)
+    lad_group_cols = ['lad21cd'] + (grouping_vars or [] if grouping_vars else [])
+    lad_group_cols = [col for col in lad_group_cols if col in ocod_without_msoa.columns]
+    
+    for group_key, group_df in ocod_without_msoa.groupby(lad_group_cols):
+        if isinstance(group_key, str):
+            group_key = (group_key,)  # Make it a tuple for consistency
+        
+        # Get LAD average prices
+        if group_key in lad_averages:
+            lad_avg = lad_averages[group_key]
+            
+            # Create a row for unknown MSOA properties in this LAD
+            unknown_row = {
+                'msoa11cd': 'UNKNOWN_' + group_key[0],  # Use LAD code in the unknown identifier
+                'price_mean': lad_avg['price_mean'],
+                'price_median': lad_avg['price_median'],
+                'ocod_total_counts': len(group_df),
+                'dwellings': 0  # We don't have dwelling counts for unknown areas
+            }
+            
+            # Add grouping variables
+            if grouping_vars:
+                for i, var in enumerate(grouping_vars):
+                    if i + 1 < len(group_key):  # +1 because first element is LAD code
+                        unknown_row[var] = group_key[i + 1]
+                    elif var in group_df.columns:
+                        unknown_row[var] = group_df[var].iloc[0]
+            
+            unknown_rows.append(unknown_row)
+    
+    return unknown_rows
 
 def _calculate_aggregations(df, date, year, month, grouping_vars):
     """Calculate aggregation metrics"""

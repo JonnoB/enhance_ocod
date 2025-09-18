@@ -94,6 +94,8 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 # ====== CONSTANT PATHS AND SETTINGS ======
 input_dir = SCRIPT_DIR.parent / "data" / "ocod_history"
 output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
+
+# Model path should be replaced with "Jonnob/OCOD_NER" to download from HF
 model_path = (
     SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
 )
@@ -149,7 +151,8 @@ else:
     # Create directory if it doesn't exist
     gazetteer_dir.mkdir(parents=True, exist_ok=True)
     
-    # Run the function
+    # Run the function, it will take about 1.5 hours due to the time needed to create the building gazetteer.
+    # This ibviously needs some form of improvement!
     building_gazetteer, district_gazetteer, street_gazetteer = gazetteer_generator(
         price_paid_folder='../data/processed_price_paid'
     )
