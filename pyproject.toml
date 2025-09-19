@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [project]
-name = "enhance-ocod"
-version = "0.1.0"
+name = "enhance_ocod"
+version = "0.2.0"
 authors = [
     {name = "Jonathan Bourne"},
 ]
@@ -39,8 +39,14 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v"
 
+[tool.uv]
+dev-dependencies = [
+    "build",
+    "twine",
+]
 
-[project.optional-dependencies]
+
+[dependency-groups]
 dev = [
     "pytest>=7.0",
 ]
