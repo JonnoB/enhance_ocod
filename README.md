@@ -143,7 +143,7 @@ If you use this repository, please cite:
 
 
 ## License
-This project is licensed under the GNU 3.0 License. See the `LICENSE` file for details.
+This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ## Acknowledgements
 - The enhanced OCOD dataset and pipeline were demonstrated in the paper: [Inspecting the laundromat](https://doi.org/10.1177/23998083231155483)
