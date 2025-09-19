@@ -41,15 +41,40 @@ enhance_ocod/
 ```
 
 ## Installation
+
+### Option 1: Install from PyPI (Recommended)
+```bash
+pip install enhance-ocod
+```
+
+### Option 2: Install from GitHub (Latest Development Version)
+```bash
+pip install git+https://github.com/JonnoB/enhance_ocod.git
+```
+
+### Option 3: Development Installation
+If you want to contribute or modify the code:
+
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/JonnoB/enhance_ocod/tree/main
+   git clone https://github.com/JonnoB/enhance_ocod.git
    cd enhance_ocod
    ```
-2. **Install dependencies:**
+
+2. **Install in development mode:**
    ```bash
-   pip install -r requirements.txt
+   pip install -e .
    ```
+   
+   Or if you're using uv:
+   ```bash
+   uv pip install -e .
+   ```
+
+**Notes:**
+- The package name for installation is `enhance-ocod` (with hyphen)
+- The import name is `enhance_ocod` (with underscore)
+- Python automatically handles this naming conversion
 
 ## Data Requirements
 To recreate or update the enhanced OCOD dataset, several open datasets are required. 
