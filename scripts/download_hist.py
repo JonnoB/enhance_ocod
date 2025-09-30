@@ -68,7 +68,7 @@ def main():
     else:
         print("Downloading price paid dataset (this is hefty and will take some time. Size july 2025 was 4.3 GB)")
         download_csv("http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv",
-                     save_path='enhance_ocod/data/price_paid_data/price_paid_complete.csv')
+                     save_path = PRICE_PAID_DIR / 'price_paid_complete.csv')
 
     # DOwnload the ONSPD files this is only about 10 seconds
     if check_directory_has_files(ONSPD_DIR):

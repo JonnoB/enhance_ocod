@@ -24,7 +24,8 @@ from abc import ABC, abstractmethod
 
 def download_csv(url: str, 
                  save_path: Optional[Union[str, Path]] = None, 
-                 return_df: bool = False) -> Optional[pd.DataFrame]:
+                 return_df: bool = False,
+                 chunk_size: int = 8192) -> Optional[pd.DataFrame]:
     """
     Download a CSV file from a URL with options to save and/or return as DataFrame.
     
@@ -32,6 +33,7 @@ def download_csv(url: str,
         url (str): The URL to download the CSV file from
         save_path (str or Path, optional): Path where to save the file. If None, file won't be saved.
         return_df (bool): If True, returns the data as a pandas DataFrame
+        chunk_size (int): Size of chunks to download (in bytes)
         
     Returns:
         pd.DataFrame or None: DataFrame if return_df=True, otherwise None
@@ -42,20 +44,51 @@ def download_csv(url: str,
     
     try:
         print(f"Downloading CSV from: {url}")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
         
-        csv_content = io.StringIO(response.text)
-        df = pd.read_csv(csv_content)
-        print(f"Successfully downloaded CSV with shape: {df.shape}")
-        
-        if save_path is not None:
+        # For large files, we should save first, then optionally load
+        if save_path is None and return_df:
+            # If we need to return df but have no save path, create a temp file
+            import tempfile
+            temp_file = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.csv')
+            save_path = Path(temp_file.name)
+            temp_file.close()
+            delete_after = True
+        else:
             save_path = Path(save_path)
             save_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(save_path, index=False)
-            print(f"File saved to: {save_path}")
+            delete_after = False
         
-        return df if return_df else None
+        # Stream download to file
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()
+        
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+        
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size > 0:
+                        percent = (downloaded / total_size) * 100
+                        print(f"\rProgress: {percent:.1f}% ({downloaded / (1024**3):.2f} GB / {total_size / (1024**3):.2f} GB)", 
+                              end='', flush=True)
+        
+        print(f"\nSuccessfully downloaded to: {save_path}")
+        
+        # Only load into DataFrame if requested
+        if return_df:
+            print("Loading CSV into DataFrame...")
+            df = pd.read_csv(save_path)
+            print(f"DataFrame loaded with shape: {df.shape}")
+            
+            if delete_after:
+                save_path.unlink()  # Delete temp file
+            
+            return df
+        
+        return None
             
     except (requests.exceptions.RequestException, pd.errors.ParserError, IOError) as e:
         print(f"Error in download_csv: {e}")
