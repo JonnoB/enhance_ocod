@@ -46,6 +46,8 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
     """
     # Default configuration
     if column_config is None:
+    # This is the old one I am not really sure what to do with it at the moment
+    # I think just waiting to see how this develops is the best option   
         column_config = {
             "pcds": {"rename": "postcode2", "dtype": "string"},
             "oslaua": {"rename": "lad11cd", "dtype": "category"},
@@ -53,6 +55,14 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
             "lsoa11": {"rename": "lsoa11cd", "dtype": "category"},
             "msoa11": {"rename": "msoa11cd", "dtype": "category"},
             "ctry": {"rename": "ctry", "dtype": "category", "drop": True}
+        }
+        column_config = {
+            "pcds": {"rename": "postcode2", "dtype": "string"},
+            "lad25cd": {"rename": "lad11cd", "dtype": "category"},
+            "oa11cd": {"rename": "oa11cd", "dtype": "category"},
+            "lsoa11cd": {"rename": "lsoa11cd", "dtype": "category"},
+            "msoa11cd": {"rename": "msoa11cd", "dtype": "category"},
+            "ctry25cd": {"rename": "ctry", "dtype": "category", "drop": True}
         }
     
     # Extract components from configuration
