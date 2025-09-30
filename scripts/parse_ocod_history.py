@@ -95,10 +95,10 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 input_dir = SCRIPT_DIR.parent / "data" / "ocod_history"
 output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
 
-# Model path should be replaced with "Jonnob/OCOD_NER" to download from HF
-model_path = (
-    SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model"
-)
+# Model path should be replaced with local model if you are re-running the experiments
+# HF model is the gold label model not the model trained from weakly-labelled data.
+model_path =  "Jonnob/OCOD_NER"
+#model_path = (SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model")
 
 def get_first_file_in_data_dir(dirname):
     """Get the first file in a data subdirectory, or None if no files exist."""
