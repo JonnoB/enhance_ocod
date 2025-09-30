@@ -16,7 +16,8 @@ from tqdm import tqdm
 import json
 import logging
 from pathlib import Path
-
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 from .ner_spans import lfs
 
@@ -76,36 +77,83 @@ def process_dataframe_batch(
     include_function_name: bool = False,
     save_intermediate: bool = False,
     output_dir: Optional[str] = None,
-    verbose: bool = True,
+    verbose: bool = False,
     functions: Optional[List] = None,
+    n_workers: Optional[int] = -1, 
 ) -> List[Dict[str, Any]]:
     """
     Process a dataframe in batches, applying labelling functions to each row.
+    
+    Supports both serial and parallel processing. Set n_workers > 1 for parallel.
 
-    Args:
-        df: DataFrame with text and support columns
-        batch_size: Number of rows to process at once
-        text_column: Name of the column containing text
-        include_function_name: Whether to include which function generated each span
-        save_intermediate: Whether to save each batch to disk
-        output_dir: Directory to save intermediate results (required if save_intermediate=True)
-        verbose: Whether to show progress bars
-        functions: List of labelling functions to apply (default: None, uses lfs)
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with text and support columns
+    batch_size : int, default=5000
+        Number of rows to process in each batch
+    text_column : str, default="text"
+        Name of the column containing text
+    include_function_name : bool, default=False
+        Whether to include which function generated each span
+    save_intermediate : bool, default=False
+        Whether to save each batch to disk
+    output_dir : str, optional
+        Directory to save intermediate results (required if save_intermediate=True)
+    verbose : bool, default=False
+        Whether to show progress bars
+    functions : List, optional
+        List of labelling functions to apply (default: None, uses lfs)
+    n_workers : int, optional
+        Number of parallel workers. If None, uses serial processing.
+        Set to -1 to auto-detect (cpu_count - 2).
 
-    Returns:
+    Returns
+    -------
+    List[Dict[str, Any]]
         List of results in training format
     """
-
     if save_intermediate and not output_dir:
         raise ValueError("output_dir must be provided when save_intermediate=True")
 
     if save_intermediate:
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # Use default labelling functions if none provided
     if functions is None:
         functions = lfs
+    
+    # Auto-detect workers if requested
+    if n_workers == -1:
+        n_workers = max(1, cpu_count() - 2)
+    
+    # Decide: parallel or serial?
+    if n_workers and n_workers > 1:
+        # PARALLEL PROCESSING
+        return _process_parallel(
+            df, batch_size, text_column, include_function_name,
+            save_intermediate, output_dir, verbose, functions, n_workers
+        )
+    else:
+        # SERIAL PROCESSING (original logic)
+        return _process_serial(
+            df, batch_size, text_column, include_function_name,
+            save_intermediate, output_dir, verbose, functions
+        )
 
+
+def _process_serial(
+    df: pd.DataFrame,
+    batch_size: int,
+    text_column: str,
+    include_function_name: bool,
+    save_intermediate: bool,
+    output_dir: Optional[str],
+    verbose: bool,
+    functions: List,
+) -> List[Dict[str, Any]]:
+    """
+    Original serial processing logic (kept as internal function).
+    """
     all_results = []
     total_batches = (len(df) + batch_size - 1) // batch_size
 
@@ -129,51 +177,40 @@ def process_dataframe_batch(
         batch_results = []
         failed_rows = []
 
-        # Process each row in the batch
         for datapoint_id, (_, row) in enumerate(batch_df.iterrows()):
             try:
                 result = apply_labelling_functions_to_row(
                     row, 
                     include_function_name=include_function_name,
-                    functions = functions
+                    functions=functions
                 )
 
-                # Add metadata for tracking
-                result["datapoint_id"] = start_idx + datapoint_id  # Global row index
+                result["datapoint_id"] = start_idx + datapoint_id
                 batch_results.append(result)
 
             except Exception as e:
-                failed_rows.append(
-                    {
-                        "datapoint_id": start_idx + datapoint_id,
-                        "error": str(e),
-                        "text": row.get(text_column, "")[:100]
-                        + "...",  # First 100 chars for debugging
-                    }
-                )
+                failed_rows.append({
+                    "datapoint_id": start_idx + datapoint_id,
+                    "error": str(e),
+                    "text": row.get(text_column, "")[:100] + "...",
+                })
                 logging.error(f"Failed to process row {start_idx + datapoint_id}: {e}")
 
-        # Log batch statistics
         if verbose and failed_rows:
             logging.warning(
                 f"Batch {batch_idx}: {len(failed_rows)} rows failed out of {len(batch_df)}"
             )
 
-        # Save intermediate results if requested
         if save_intermediate:
             batch_file = Path(output_dir) / f"batch_{batch_idx:04d}.json"
             with open(batch_file, "w") as f:
-                json.dump(
-                    {
-                        "batch_idx": batch_idx,
-                        "start_idx": start_idx,
-                        "end_idx": end_idx,
-                        "results": batch_results,
-                        "failed_rows": failed_rows,
-                    },
-                    f,
-                    indent=2,
-                )
+                json.dump({
+                    "batch_idx": batch_idx,
+                    "start_idx": start_idx,
+                    "end_idx": end_idx,
+                    "results": batch_results,
+                    "failed_rows": failed_rows,
+                }, f, indent=2)
 
         all_results.extend(batch_results)
 
@@ -185,6 +222,125 @@ def process_dataframe_batch(
         print(f"  - Average {total_spans / len(all_results):.2f} spans per row")
 
     return all_results
+
+
+def _process_parallel(
+    df: pd.DataFrame,
+    batch_size: int,
+    text_column: str,
+    include_function_name: bool,
+    save_intermediate: bool,
+    output_dir: Optional[str],
+    verbose: bool,
+    functions: List,
+    n_workers: int,
+) -> List[Dict[str, Any]]:
+    """
+    Parallel processing logic.
+    """
+    if verbose:
+        print(f"Processing {len(df):,} rows in batches of {batch_size:,}")
+        print(f"Using {n_workers} parallel workers")
+
+    # Pre-process the entire dataframe (tags need to be computed once)
+    df = df.copy()
+    df = create_flat_tag(df, text_column)
+    df = create_commercial_park_tag(df, text_column)
+    df["text"] = df[text_column].fillna("")
+
+    # Prepare batches
+    batches = []
+    for batch_idx, start_idx in enumerate(range(0, len(df), batch_size)):
+        end_idx = min(start_idx + batch_size, len(df))
+        batch_df = df.iloc[start_idx:end_idx].copy()
+        
+        batches.append((
+            batch_df,
+            start_idx,
+            batch_idx,
+            include_function_name,
+            functions
+        ))
+    
+    # Process batches in parallel
+    with Pool(n_workers) as pool:
+        if verbose:
+            batch_outputs = list(tqdm(
+                pool.imap_unordered(process_single_batch, batches),
+                total=len(batches),
+                desc="Processing batches"
+            ))
+        else:
+            batch_outputs = pool.map(process_single_batch, batches)
+    
+    # Sort results by batch_idx (imap_unordered returns in random order)
+    batch_outputs.sort(key=lambda x: x[2])
+    
+    # Collect results
+    all_results = []
+    all_failed_rows = []
+    
+    for batch_results, failed_rows, batch_idx in batch_outputs:
+        if save_intermediate:
+            batch_file = Path(output_dir) / f"batch_{batch_idx:04d}.json"
+            start_idx = batches[batch_idx][1]
+            end_idx = start_idx + len(batches[batch_idx][0])
+            
+            with open(batch_file, "w") as f:
+                json.dump({
+                    "batch_idx": batch_idx,
+                    "start_idx": start_idx,
+                    "end_idx": end_idx,
+                    "results": batch_results,
+                    "failed_rows": failed_rows,
+                }, f, indent=2)
+        
+        all_results.extend(batch_results)
+        all_failed_rows.extend(failed_rows)
+        
+        if verbose and failed_rows:
+            logging.warning(
+                f"Batch {batch_idx}: {len(failed_rows)} rows failed"
+            )
+    
+    if verbose:
+        total_spans = sum(len(result["spans"]) for result in all_results)
+        print("\nProcessing complete:")
+        print(f"  - Processed {len(all_results):,} rows successfully")
+        print(f"  - Failed rows: {len(all_failed_rows):,}")
+        print(f"  - Found {total_spans:,} total spans")
+        print(f"  - Average {total_spans / len(all_results):.2f} spans per row")
+    
+    return all_results
+
+
+def process_single_batch(args):
+    """Worker function for parallel processing."""
+    batch_df, start_idx, batch_idx, include_function_name, functions = args
+    
+    batch_results = []
+    failed_rows = []
+    
+    for datapoint_id, (_, row) in enumerate(batch_df.iterrows()):
+        try:
+            result = apply_labelling_functions_to_row(
+                row, 
+                include_function_name=include_function_name,
+                functions=functions
+            )
+            
+            result["datapoint_id"] = start_idx + datapoint_id
+            batch_results.append(result)
+            
+        except Exception as e:
+            failed_rows.append({
+                "datapoint_id": start_idx + datapoint_id,
+                "error": str(e),
+                "text": row.get("text", "")[:100] + "...",
+            })
+            logging.error(f"Failed to process row {start_idx + datapoint_id}: {e}")
+    
+    return batch_results, failed_rows, batch_idx
 
 
 # Function to load and combine intermediate results

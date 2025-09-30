@@ -169,8 +169,6 @@ class BaseDownloader(ABC):
             with open(output_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
                     f.write(chunk)
-            
-            print(f"Successfully downloaded {output_path.name}")
             return True
             
         except Exception as e:
