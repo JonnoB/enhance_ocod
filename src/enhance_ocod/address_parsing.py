@@ -10,7 +10,7 @@ from .labelling.ner_regex import xx_to_yy_regex
 # This  module is supposed to contain all the relevant functions for parsing the labeled json file
 
 
-def load_postcode_district_lookup(file_path, target_post_area=None):
+def load_postcode_district_lookup(file_path, target_post_area=None, column_config=None):
     """
     Load the ONS postcode district lookup table from a ZIP file.
 
@@ -22,26 +22,52 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
         file_path (str): Path to the ZIP file containing the ONSPD data.
         target_post_area (str, optional): Specific CSV file within the ZIP to load.
             If None, automatically finds the appropriate file.
+        column_config (dict, optional): Configuration dictionary mapping source column names
+            to their properties. Each key is a source column name, and each value is a dict with:
+                - 'rename' (str): Target column name after loading
+                - 'dtype' (str): Pandas dtype for the column
+                - 'drop' (bool, optional): Whether to drop this column after filtering. Defaults to False.
+            If None, uses default ONSPD configuration.
 
     Returns:
         pd.DataFrame: Processed postcode district lookup table with mixed dtypes optimized for memory.
+
+    Example:
+        # Use default configuration
+        df = load_postcode_district_lookup('ONSPD.zip')
+        
+        # Custom configuration
+        custom_config = {
+            "pcds": {"rename": "postcode", "dtype": "string"},
+            "oslaua": {"rename": "local_authority", "dtype": "category"},
+            "ctry": {"rename": "country", "dtype": "category", "drop": True}
+        }
+        df = load_postcode_district_lookup('ONSPD.zip', column_config=custom_config)
     """
+    # Default configuration
+    if column_config is None:
+        column_config = {
+            "pcds": {"rename": "postcode2", "dtype": "string"},
+            "oslaua": {"rename": "lad11cd", "dtype": "category"},
+            "oa11": {"rename": "oa11cd", "dtype": "category"},
+            "lsoa11": {"rename": "lsoa11cd", "dtype": "category"},
+            "msoa11": {"rename": "msoa11cd", "dtype": "category"},
+            "ctry": {"rename": "ctry", "dtype": "category", "drop": True}
+        }
+    
+    # Extract components from configuration
+    columns_to_read = list(column_config.keys())
+    dtype_dict = {col: config["dtype"] for col, config in column_config.items()}
+    rename_mapping = {col: config["rename"] for col, config in column_config.items()}
+    columns_to_drop = [config["rename"] for col, config in column_config.items() 
+                       if config.get("drop", False)]
+    
     with zipfile.ZipFile(file_path) as zf:
         # If no target file specified, find it automatically
         if target_post_area is None:
             target_post_area = [
                 i for i in zf.namelist() if re.search(r"^Data/ONSPD.+csv$", i)
             ][0]
-
-        columns_to_read = ["pcds", "oslaua", "oa11", "lsoa11", "msoa11", "ctry"]
-        dtype_dict = {
-            "pcds": "string",
-            "oslaua": "category",
-            "oa11": "category",
-            "lsoa11": "category", 
-            "msoa11": "category",
-            "ctry": "category"
-        }
 
         with io.TextIOWrapper(zf.open(target_post_area), encoding="latin-1") as f:
             postcode_district_lookup = pd.read_csv(
@@ -52,35 +78,47 @@ def load_postcode_district_lookup(file_path, target_post_area=None):
             )
 
             # Filter for English and Welsh postcodes
-            postcode_district_lookup = postcode_district_lookup[
-                (postcode_district_lookup["ctry"] == "E92000001")
-                | (postcode_district_lookup["ctry"] == "W92000004")
-            ]
+            # Note: This assumes 'ctry' column exists and is renamed to something
+            # Find the country column (original or renamed)
+            country_col = None
+            for source_col, config in column_config.items():
+                if source_col == "ctry" or config["rename"] == "ctry":
+                    country_col = source_col
+                    break
+            
+            if country_col and country_col in postcode_district_lookup.columns:
+                postcode_district_lookup = postcode_district_lookup[
+                    (postcode_district_lookup[country_col] == "E92000001")
+                    | (postcode_district_lookup[country_col] == "W92000004")
+                ]
 
             # Rename columns
-            postcode_district_lookup.rename(
-                columns={
-                    "pcds": "postcode2",
-                    "oslaua": "lad11cd",
-                    "oa11": "oa11cd",
-                    "lsoa11": "lsoa11cd",
-                    "msoa11": "msoa11cd",
-                },
-                inplace=True,
-            )
+            postcode_district_lookup.rename(columns=rename_mapping, inplace=True)
 
-            # Process postcodes - keep as string since each is unique
-            postcode_district_lookup["postcode2"] = (
-                postcode_district_lookup["postcode2"]
-                .str.lower()
-                .str.replace(r"\s", r"", regex=True)
-            )
+            # Process postcodes - find the postcode column and transform it
+            # Look for the renamed postcode column (default is 'postcode2')
+            postcode_col = None
+            for source_col, config in column_config.items():
+                if source_col == "pcds":
+                    postcode_col = config["rename"]
+                    break
+            
+            if postcode_col and postcode_col in postcode_district_lookup.columns:
+                postcode_district_lookup[postcode_col] = (
+                    postcode_district_lookup[postcode_col]
+                    .str.lower()
+                    .str.replace(r"\s", r"", regex=True)
+                )
 
-            # Drop country column
-            postcode_district_lookup.drop("ctry", axis=1, inplace=True)
+            # Drop marked columns
+            if columns_to_drop:
+                postcode_district_lookup.drop(
+                    [col for col in columns_to_drop if col in postcode_district_lookup.columns], 
+                    axis=1, 
+                    inplace=True
+                )
 
-            # Remove unused values, this ensures that only English and Welsh geography
-            # categories remain.
+            # Remove unused categories from all categorical columns
             for col in postcode_district_lookup.select_dtypes(include=['category']).columns:
                 postcode_district_lookup[col] = postcode_district_lookup[col].cat.remove_unused_categories()
 
