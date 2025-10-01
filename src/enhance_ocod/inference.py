@@ -167,6 +167,7 @@ def parse_addresses_basic(
     batch_size: int = 512,
     device: Optional[int] = None,
     show_progress: bool = True,
+    verbose = False,
 ) -> Dict:
     """
     Parse addresses using single-stage HuggingFace pipeline processing.
@@ -199,9 +200,8 @@ def parse_addresses_basic(
     # Prepare data
     addresses, datapoint_ids = _prepare_data(df, target_column)
 
-    print(
-        f"Loading model and processing {len(addresses)} addresses with batch_size={batch_size}"
-    )
+    if verbose:
+        print(f"Loading model and processing {len(addresses)} addresses with batch_size={batch_size}")
 
     # Create pipeline
     nlp = _create_pipeline(model_path, device, batch_size)
@@ -233,6 +233,7 @@ def parse_addresses_pipeline(
     long_batch_size: int = 32,
     token_threshold: int = 128,
     device: Optional[int] = None,
+    verbose = False,
 ) -> Dict:
     """
     Parse addresses using optimized two-stage processing for mixed-length data.
@@ -255,6 +256,7 @@ def parse_addresses_pipeline(
         long_batch_size: Batch size for long addresses (smaller = less memory)
         token_threshold: Token count threshold to split short/long addresses
         device: GPU device (-1 for CPU, 0+ for GPU). Auto-detected if None
+        verbose: with additional print statements
 
     Returns:
         Dict with 'summary' and 'results' keys containing parsing results
@@ -278,13 +280,14 @@ def parse_addresses_pipeline(
     short_data, long_data = _split_by_length(
         addresses, datapoint_ids, tokenizer, token_threshold
     )
-
-    print(f"Short addresses: {len(short_data):,} | Long addresses: {len(long_data):,}")
+    if verbose:
+        print(f"Short addresses: {len(short_data):,} | Long addresses: {len(long_data):,}")
 
     # Process each stage
     results = [None] * len(addresses)
-    _process_stage(short_data, "short", short_batch_size, model_path, device, results)
-    _process_stage(long_data, "long", long_batch_size, model_path, device, results)
+    _process_stage(short_data, "short", short_batch_size, model_path, device, results, verbose)
+    _process_stage(long_data, "long", long_batch_size, model_path, device, results, verbose)
+
 
     # Calculate summary with two-stage metrics
     summary = _calculate_summary(
@@ -309,7 +312,7 @@ def _split_by_length(
     """Split addresses into short and long categories based on token count."""
     short_data, long_data = [], []
 
-    for i, addr in enumerate(tqdm(addresses, desc="Analyzing address lengths")):
+    for i, addr in enumerate(addresses):
         token_count = len(tokenizer.tokenize(addr))
         data_tuple = (i, addr, datapoint_ids[i])
 
@@ -328,27 +331,16 @@ def _process_stage(
     model_path: str,
     device: int,
     results: List,
+    verbose: bool = False,
 ) -> None:
-    """
-    Process one stage (short or long addresses) with optimized batch size.
-
-    Args:
-        stage_data: List of (index, address, datapoint_id) tuples
-        stage_name: "short" or "long" for logging
-        batch_size: Batch size optimized for this stage
-        model_path: Path to the model
-        device: Device to use
-        results: List to store results (modified in-place)
-    """
+    """Process one stage (short or long addresses) with optimized batch size."""
     if not stage_data:
-        print(f"No {stage_name} addresses to process")
         return
 
-    print(
-        f"Processing {len(stage_data):,} {stage_name} addresses (batch_size={batch_size})..."
-    )
+    if verbose:
+        print(f"Processing {len(stage_data):,} {stage_name} addresses (batch_size={batch_size})...")
 
-    # Create pipeline for this stage
+    # Create pipeline for this stage (suppressed logging at module level)
     pipeline_instance = _create_pipeline(model_path, device, batch_size)
 
     # Extract data for processing
@@ -363,7 +355,9 @@ def _process_stage(
     ):
         results[idx] = format_result(idx, addr, datapoint_id, preds)
 
-    print(f"✓ Completed {len(stage_data):,} {stage_name} addresses")
+    if verbose:
+        print(f"✓ Completed {len(stage_data):,} {stage_name} addresses")
+
 
 
 # ==================== RESULT PROCESSING ====================
