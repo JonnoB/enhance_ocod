@@ -130,13 +130,24 @@ print(f"Parsed {results['summary']['successful_parses']} addresses")
   ```
 
 ### Order to run the scripts in
+To Parse the OCOD history you can simply run
+
+```bash
+python download_hist.py && python parse_ocod_history
+```
+This will download all necessary data and then created a folder called `ocod_history_processed` with one standardised OCOD parquet file per original ocod  file. Using an L4 GPU with 24GB VRAM and 16 GB RAM the it will take 2-3 hours to process the first decade of OCOD. This will typicall cost less then $2.
+
+
+To reproduce the Paper run the files in the following order
 
 - `download_hist.py`: Downloads the entire OCOD dataset history and saves by year as zip files. Requires a 'LANDREGISTRY_API' in the .env file.
 - `create_weak_labelling_data.py`: Using the regex rules weakly label the OCOD February 2022 data set
 - `ready_csv_for_training.py`: Create the datasets for training and evaluation of the models out of the development set, weakly labelled set and test set.
 - `run_experiments.py`: Using the dev and weakly labelled sets, train the ModernBERT models. The script also calls the `mbert_train_configurable.py` script.
-- `parse_ocod_history`: Processes the entire history of the OCOD dataset. Using the pre-trained model can be run directly after `download_hist.py`
-- `price_paide_msoa_averages.py`: Calculates the mean price per MSOA, for a rolling three years. This is used by `price_paid_msoa_averages.ipynb
+- `parse_ocod_history.py`: Processes the entire history of the OCOD dataset. You will need to edit the file as the default is to use the model from HuggingFace.
+- `price_paide_msoa_averages.py`: Calculates the mean price per MSOA, for a rolling three years. This is used by `price_paid_msoa_averages.ipynb.
+
+After you can run the .ipynb files to output the analysis.
 
 ## Pipeline Stages
 
