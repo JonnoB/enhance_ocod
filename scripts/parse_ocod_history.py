@@ -177,6 +177,9 @@ all_files = sorted([f for f in input_dir.glob("OCOD_FULL_*.zip")])
 # all_files = [all_files[i] for i in test_indices if i < len(all_files)]
 print(f"Found {len(all_files)} OCOD history files.")
 
+processed_count = 0
+skipped_count = 0
+
 for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     out_name = zip_file.stem + ".parquet"
     out_path = output_dir / out_name
@@ -185,10 +188,10 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     parsed_results_file = parsed_results_dir / f"{zip_file.stem}_parsed_results.pkl"
 
     if out_path.exists():
-        print(f"Skipping {zip_file.name}: already processed.")
+        skipped_count += 1
         continue
-
-    print(f"Processing {zip_file.name}...")
+    
+    processed_count += 1
 
     # Load and process the OCOD data
     ocod_data = load_and_prep_OCOD_data(str(zip_file))
@@ -197,14 +200,9 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     # Perform NER on addresses
     ###############
     if parsed_results_file.exists():
-        print(f"Loading cached parsing results for {zip_file.name}...")
         with open(parsed_results_file, "rb") as f:
             results = pickle.load(f)
-        print(
-            f"Loaded cached results with success rate: {results['summary']['success_rate']:.1%}"
-        )
     else:
-        print(f"Parsing addresses for {zip_file.name}...")
         start_time = time.time()
 
         results = parse_addresses_pipeline(
@@ -215,11 +213,7 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         )
 
         end_time = time.time()
-        print(f"Address parsing took {end_time - start_time:.2f} seconds")
-        print(f"Success rate: {results['summary']['success_rate']:.1%}")
 
-        # Save parsing results
-        print(f"Saving parsing results to {parsed_results_file}...")
         with open(parsed_results_file, "wb") as f:
             pickle.dump(results, f)
 
@@ -323,7 +317,6 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     ocod_data = ocod_data.loc[:, columns]
     # Save results
     ocod_data.to_parquet(out_path)
-    print(f"Saved processed data to {out_path}")
 
     # Clean up for next iteration
     del ocod_data
@@ -338,3 +331,5 @@ del postcode_district_lookup, voa_businesses
 gc.collect()
 
 print("All files processed.")
+
+print(f"Processing complete: {processed_count} files processed, {skipped_count} files skipped.")
