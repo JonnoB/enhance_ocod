@@ -12,6 +12,9 @@ figures/
 .config
 malcom_loop.sh
 
+# Python build artifacts
+*.whl
+*tar.gz
 
 models/
 temp.ipynb
