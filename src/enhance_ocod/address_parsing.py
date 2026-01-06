@@ -44,11 +44,10 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
         }
         df = load_postcode_district_lookup('ONSPD.zip', column_config=custom_config)
     """
-    # Default configuration
+    # Default configuration - define both old and new formats
     if column_config is None:
-    # This is the old one I am not really sure what to do with it at the moment
-    # I think just waiting to see how this develops is the best option   
-        column_config = {
+        # Old format (pre-2025)
+        old_format_config = {
             "pcds": {"rename": "postcode2", "dtype": "string"},
             "oslaua": {"rename": "lad11cd", "dtype": "category"},
             "oa11": {"rename": "oa11cd", "dtype": "category"},
@@ -56,7 +55,9 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
             "msoa11": {"rename": "msoa11cd", "dtype": "category"},
             "ctry": {"rename": "ctry", "dtype": "category", "drop": True}
         }
-        column_config = {
+
+        # New format (2025+)
+        new_format_config = {
             "pcds": {"rename": "postcode2", "dtype": "string"},
             "lad25cd": {"rename": "lad11cd", "dtype": "category"},
             "oa11cd": {"rename": "oa11cd", "dtype": "category"},
@@ -64,14 +65,57 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
             "msoa11cd": {"rename": "msoa11cd", "dtype": "category"},
             "ctry25cd": {"rename": "ctry", "dtype": "category", "drop": True}
         }
-    
+
+        # Auto-detect format by reading column headers
+        with zipfile.ZipFile(file_path) as zf:
+            # Find the CSV file
+            if target_post_area is None:
+                target_post_area = [
+                    i for i in zf.namelist() if re.search(r"^Data/ONSPD.+csv$", i)
+                ][0]
+
+            # Read just the header to detect format
+            with io.TextIOWrapper(zf.open(target_post_area), encoding="latin-1") as f:
+                header = pd.read_csv(f, nrows=0)
+                available_columns = set(header.columns)
+
+            # Check which format matches
+            old_format_keys = set(old_format_config.keys())
+            new_format_keys = set(new_format_config.keys())
+
+            if old_format_keys.issubset(available_columns):
+                column_config = old_format_config
+                print("Detected old ONSPD format (pre-2025)")
+            elif new_format_keys.issubset(available_columns):
+                column_config = new_format_config
+                print("Detected new ONSPD format (2025+)")
+            else:
+                # Neither format matches - fail with clear error
+                old_matches = len(old_format_keys.intersection(available_columns))
+                new_matches = len(new_format_keys.intersection(available_columns))
+                old_missing = old_format_keys - available_columns
+                new_missing = new_format_keys - available_columns
+
+                error_msg = (
+                    f"ONSPD format not recognized. Neither old nor new format column sets found.\n\n"
+                    f"Old format (pre-2025) - matched {old_matches}/{len(old_format_keys)} columns:\n"
+                    f"  Expected: {sorted(old_format_keys)}\n"
+                    f"  Missing: {sorted(old_missing)}\n\n"
+                    f"New format (2025+) - matched {new_matches}/{len(new_format_keys)} columns:\n"
+                    f"  Expected: {sorted(new_format_keys)}\n"
+                    f"  Missing: {sorted(new_missing)}\n\n"
+                    f"Available columns in file: {sorted(available_columns)}\n\n"
+                    f"Please check the ONSPD file format or update the column configuration."
+                )
+                raise ValueError(error_msg)
+
     # Extract components from configuration
     columns_to_read = list(column_config.keys())
     dtype_dict = {col: config["dtype"] for col, config in column_config.items()}
     rename_mapping = {col: config["rename"] for col, config in column_config.items()}
-    columns_to_drop = [config["rename"] for col, config in column_config.items() 
+    columns_to_drop = [config["rename"] for col, config in column_config.items()
                        if config.get("drop", False)]
-    
+
     with zipfile.ZipFile(file_path) as zf:
         # If no target file specified, find it automatically
         if target_post_area is None:
