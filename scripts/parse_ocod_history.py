@@ -32,11 +32,14 @@ Output:
 
 Usage:
     Run this script to process all OCOD historical files in the input directory.
-    The script will skip files that have already been processed (existing output 
+    The script will skip files that have already been processed (existing output
     files).
 
 Example:
-    python ocod_processing_pipeline.py
+    python parse_ocod_history.py
+    python parse_ocod_history.py --input-dir /path/to/input --output-dir /path/to/output
+    python parse_ocod_history.py --model-path /path/to/local/model
+    python parse_ocod_history.py --model-path Jonnob/OCOD_NER
 
 Requirements:
     - torch
@@ -75,6 +78,7 @@ from pathlib import Path
 from tqdm import tqdm
 import time
 import gc  # Add for memory management
+import argparse
 
 import pickle
 import pandas as pd
@@ -91,14 +95,45 @@ torch.set_float32_matmul_precision("medium")
 
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
-# ====== CONSTANT PATHS AND SETTINGS ======
-input_dir = SCRIPT_DIR.parent / "data" / "ocod_history"
-output_dir = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
+# ====== PARSE COMMAND LINE ARGUMENTS ======
+def parse_arguments():
+    """Parse command line arguments for input/output directories and model path."""
+    parser = argparse.ArgumentParser(
+        description="Process OCOD historical dataset with optional custom paths."
+    )
 
-# Model path should be replaced with local model if you are re-running the experiments
-# HF model is the gold label model not the model trained from weakly-labelled data.
-model_path =  "Jonnob/OCOD_NER"
-#model_path = (SCRIPT_DIR.parent / "models" / "address_parser_original_fullset" / "final_model")
+    # Default paths
+    default_input = SCRIPT_DIR.parent / "data" / "ocod_history"
+    default_output = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
+    default_model = "Jonnob/OCOD_NER"
+
+    parser.add_argument(
+        "--input-dir",
+        type=str,
+        default=str(default_input),
+        help=f"Input directory containing OCOD_FULL_*.zip files (default: {default_input})"
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=str(default_output),
+        help=f"Output directory for processed parquet files (default: {default_output})"
+    )
+
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default=default_model,
+        help=f"Model path (HuggingFace model ID or local path) (default: {default_model})"
+    )
+
+    args = parser.parse_args()
+
+    return Path(args.input_dir), Path(args.output_dir), args.model_path
+
+# ====== CONSTANT PATHS AND SETTINGS ======
+input_dir, output_dir, model_path = parse_arguments()
 
 def get_first_file_in_data_dir(dirname):
     """Get the first file in a data subdirectory, or None if no files exist."""

@@ -121,7 +121,19 @@ print(f"Parsed {results['summary']['successful_parses']} addresses")
 ### 2. Using Provided Scripts
 - **Run the full pipeline:**
   ```bash
-  python parse_ocod_history.py 
+  python scripts/parse_ocod_history.py
+  ```
+
+  **With custom paths:**
+  ```bash
+  # Specify custom input and output directories
+  python scripts/parse_ocod_history.py --input-dir /path/to/input --output-dir /path/to/output
+
+  # Use a local model instead of HuggingFace
+  python scripts/parse_ocod_history.py --model-path /path/to/local/model
+
+  # Combine all options
+  python scripts/parse_ocod_history.py --input-dir /custom/input --output-dir /custom/output --model-path /custom/model
   ```
 
 - **Train an NER Model:**
@@ -133,19 +145,27 @@ print(f"Parsed {results['summary']['successful_parses']} addresses")
 To Parse the OCOD history you can simply run
 
 ```bash
-python download_hist.py && python parse_ocod_history
+python scripts/download_hist.py && python scripts/parse_ocod_history.py
 ```
-This will download all necessary data and then created a folder called `ocod_history_processed` with one standardised OCOD parquet file per original ocod  file. Using an L4 GPU with 24GB VRAM and 16 GB RAM the it will take 2-3 hours to process the first decade of OCOD. This will typicall cost less then $2.
+This will download all necessary data and then create a folder called `ocod_history_processed` with one standardised OCOD parquet file per original ocod file. Using an L4 GPU with 24GB VRAM and 16 GB RAM it will take 2-3 hours to process the first decade of OCOD. This will typically cost less than $2.
+
+**Command-line options:**
+The `parse_ocod_history.py` script supports the following optional arguments:
+- `--input-dir`: Input directory containing OCOD_FULL_*.zip files (default: `data/ocod_history`)
+- `--output-dir`: Output directory for processed parquet files (default: `data/ocod_history_processed`)
+- `--model-path`: Model path - either a HuggingFace model ID or local path (default: `Jonnob/OCOD_NER`)
+
+If no arguments are provided, the script uses the default paths and downloads the model from HuggingFace.
 
 
 To reproduce the Paper run the files in the following order
 
-- `download_hist.py`: Downloads the entire OCOD dataset history and saves by year as zip files. Requires a 'LANDREGISTRY_API' in the .env file.
-- `create_weak_labelling_data.py`: Using the regex rules weakly label the OCOD February 2022 data set
-- `ready_csv_for_training.py`: Create the datasets for training and evaluation of the models out of the development set, weakly labelled set and test set.
-- `run_experiments.py`: Using the dev and weakly labelled sets, train the ModernBERT models. The script also calls the `mbert_train_configurable.py` script.
-- `parse_ocod_history.py`: Processes the entire history of the OCOD dataset. You will need to edit the file as the default is to use the model from HuggingFace.
-- `price_paide_msoa_averages.py`: Calculates the mean price per MSOA, for a rolling three years. This is used by `price_paid_msoa_averages.ipynb.
+- `scripts/download_hist.py`: Downloads the entire OCOD dataset history and saves by year as zip files. Requires a 'LANDREGISTRY_API' in the .env file.
+- `scripts/create_weak_labelling_data.py`: Using the regex rules weakly label the OCOD February 2022 data set
+- `scripts/ready_csv_for_training.py`: Create the datasets for training and evaluation of the models out of the development set, weakly labelled set and test set.
+- `scripts/run_experiments.py`: Using the dev and weakly labelled sets, train the ModernBERT models. The script also calls the `mbert_train_configurable.py` script.
+- `scripts/parse_ocod_history.py`: Processes the entire history of the OCOD dataset. Use `--model-path` to specify a local model or omit to use the HuggingFace model.
+- `scripts/price_paide_msoa_averages.py`: Calculates the mean price per MSOA, for a rolling three years. This is used by `price_paid_msoa_averages.ipynb.
 
 After you can run the .ipynb files to output the analysis.
 
