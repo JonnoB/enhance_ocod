@@ -16,7 +16,8 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
 
     Loads the ONSPD (Office for National Statistics Postcode Directory) and reduces
     it to relevant columns to save memory. Filters for English and Welsh postcodes.
-    Converts geographic code columns to categorical for optimal memory usage.
+    Converts geographic code columns to categorical for optimal memory usage. 
+    Automatically detects pre/post-2025 format.
 
     Args:
         file_path (str): Path to the ZIP file containing the ONSPD data.
@@ -85,10 +86,10 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
 
             if old_format_keys.issubset(available_columns):
                 column_config = old_format_config
-                print("Detected old ONSPD format (pre-2025)")
+                print("Pre-2025 ONSPD format detected")
             elif new_format_keys.issubset(available_columns):
                 column_config = new_format_config
-                print("Detected new ONSPD format (2025+)")
+                print("Post-2025 ONSPD format detected")
             else:
                 # Neither format matches - fail with clear error
                 old_matches = len(old_format_keys.intersection(available_columns))
@@ -98,10 +99,10 @@ def load_postcode_district_lookup(file_path, target_post_area=None, column_confi
 
                 error_msg = (
                     f"ONSPD format not recognized. Neither old nor new format column sets found.\n\n"
-                    f"Old format (pre-2025) - matched {old_matches}/{len(old_format_keys)} columns:\n"
+                    f"Pre-2025 formar- matched {old_matches}/{len(old_format_keys)} columns:\n"
                     f"  Expected: {sorted(old_format_keys)}\n"
                     f"  Missing: {sorted(old_missing)}\n\n"
-                    f"New format (2025+) - matched {new_matches}/{len(new_format_keys)} columns:\n"
+                    f"Post-2025 - matched {new_matches}/{len(new_format_keys)} columns:\n"
                     f"  Expected: {sorted(new_format_keys)}\n"
                     f"  Missing: {sorted(new_missing)}\n\n"
                     f"Available columns in file: {sorted(available_columns)}\n\n"
