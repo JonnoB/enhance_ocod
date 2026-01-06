@@ -320,7 +320,8 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
     # Only residential properties should be expanded so drop all other multiple title_numbers
     classified = drop_non_residential_duplicates(classified, class_col='class')
     # Expand the residential class
-    ocod_data = expand_dataframe_numbers(classified, class_var = 'class', print_every=10000, min_count=1)
+    # large_expansion_threshold can be adjusted based on data analysis
+    ocod_data = expand_dataframe_numbers(classified, class_var = 'class', print_every=10000, min_count=1, large_expansion_threshold=100)
     # Update the unique id
     ocod_data = create_unique_id(ocod_data)
 
@@ -346,6 +347,8 @@ for zip_file in tqdm(all_files, desc="Processing OCOD files"):
         "class",
         "matched_rule",
         "is_multi",
+        "expansion_size",
+        "large_expansion",
     ]
 
 

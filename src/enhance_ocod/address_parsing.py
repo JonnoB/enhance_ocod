@@ -246,27 +246,34 @@ def filter_contiguous_numbers(number_list, number_filter):
     return out
 
 
-def expand_dataframe_numbers_core(df, column_name, print_every=1000, min_count=1):
+def expand_dataframe_numbers_core(df, column_name, print_every=1000, min_count=1, large_expansion_threshold=100):
     """Expand number range formats in a dataframe column with performance monitoring.
-    
-    Processes each row in the dataframe to expand number ranges in the specified 
-    column from 'xx-to-yy' format into individual entries. Includes timing 
-    diagnostics and progress reporting.
-    
+
+    Processes each row in the dataframe to expand number ranges in the specified
+    column from 'xx-to-yy' format into individual entries. Includes timing
+    diagnostics and progress reporting. Tracks expansion sizes and flags potentially
+    erroneous large expansions.
+
     Args:
         df (pandas.DataFrame): Input dataframe to process.
         column_name (str): Name of the column containing number ranges to expand.
         print_every (int, optional): Print progress every nth iteration. Defaults to 1000.
-        min_count (int, optional): Minimum count threshold for expansion logic. 
+        min_count (int, optional): Minimum count threshold for expansion logic.
             Defaults to 1.
-    
+        large_expansion_threshold (int, optional): Threshold for flagging large expansions
+            that may be erroneous (e.g., from NER errors). Defaults to 100.
+
     Returns:
-        pandas.DataFrame: Expanded dataframe with individual number entries and 
-            timing performance metrics logged to console.
-    
+        pandas.DataFrame: Expanded dataframe with individual number entries,
+            'expansion_size' column tracking the size of each expansion,
+            'large_expansion' boolean flag for expansions exceeding the threshold,
+            and timing performance metrics logged to console.
+
     Note:
-        This function is typically called internally by expand_dataframe_numbers 
-        rather than used directly.
+        This function is typically called internally by expand_dataframe_numbers
+        rather than used directly. The 'large_expansion' flag helps researchers
+        identify potentially erroneous expansions from NER errors (e.g., "0-2009"
+        instead of "2000-2009").
     """
     # Handle empty dataframe case
     if df.shape[0] == 0:
@@ -300,6 +307,10 @@ def expand_dataframe_numbers_core(df, column_name, print_every=1000, min_count=1
         else:
             tmp = df.iloc[i].to_frame().T
 
+        # Add expansion metadata for researchers to filter/analyze
+        tmp['expansion_size'] = dataframe_len
+        tmp['large_expansion'] = dataframe_len > large_expansion_threshold
+
         temp_list.append(tmp)
         end_make_dataframe_time = time.time()
 
@@ -331,41 +342,53 @@ def expand_dataframe_numbers_core(df, column_name, print_every=1000, min_count=1
 
     return out
 
-def expand_dataframe_numbers(df, class_var = 'class', print_every=1000, min_count=1):
+def expand_dataframe_numbers(df, class_var = 'class', print_every=1000, min_count=1, large_expansion_threshold=100):
     """Expand number ranges in dataframe based on unit_id availability and expansion flags.
-    
-    Conditionally expands number ranges in either unit_id or street_number columns 
-    depending on data availability and expansion requirements. Processes rows marked 
-    for expansion while preserving non-expansion rows unchanged.
-    
+
+    Conditionally expands number ranges in either unit_id or street_number columns
+    depending on data availability and expansion requirements. Processes rows marked
+    for expansion while preserving non-expansion rows unchanged. Adds metadata columns
+    to track expansion sizes and flag potentially erroneous large expansions.
+
     Args:
         df (pandas.DataFrame): Input dataframe with expansion flags and number data.
-        column_name (str): Primary column name for number range expansion.
+        class_var (str, optional): Column name containing property class information.
+            Defaults to 'class'.
         print_every (int, optional): Progress reporting interval. Defaults to 1000.
         min_count (int, optional): Minimum count threshold for expansion. Defaults to 1.
-    
+        large_expansion_threshold (int, optional): Threshold for flagging large expansions
+            that may be erroneous (e.g., from NER errors like "0-2009"). Defaults to 100.
+
     Returns:
-        pandas.DataFrame: Combined dataframe with expanded number ranges and 
-            unchanged non-expansion rows, reset with continuous index.
+        pandas.DataFrame: Combined dataframe with expanded number ranges and
+            unchanged non-expansion rows, reset with continuous index. Includes
+            'expansion_size' and 'large_expansion' columns for rows that were expanded.
     """
 
     df = needs_expansion(df, class_var = class_var)
 
     unit_expanded = expand_dataframe_numbers_core(
-        df.loc[df['unit_id'].notna() & df['needs_expansion']].reset_index(drop=True), 
-        column_name='unit_id', 
-        print_every=print_every, 
-        min_count=min_count
+        df.loc[df['unit_id'].notna() & df['needs_expansion']].reset_index(drop=True),
+        column_name='unit_id',
+        print_every=print_every,
+        min_count=min_count,
+        large_expansion_threshold=large_expansion_threshold
     )
 
     street_expanded = expand_dataframe_numbers_core(
-        df.loc[df['unit_id'].isna() & df['needs_expansion']].reset_index(drop=True), 
-        column_name='street_number', 
-        print_every=print_every, 
-        min_count=min_count
+        df.loc[df['unit_id'].isna() & df['needs_expansion']].reset_index(drop=True),
+        column_name='street_number',
+        print_every=print_every,
+        min_count=min_count,
+        large_expansion_threshold=large_expansion_threshold
     )
 
-    expanded_df = pd.concat([df.loc[~df['needs_expansion']], unit_expanded, street_expanded], ignore_index = True)
+    # Add expansion metadata columns to non-expanded rows (all set to 1/False)
+    non_expanded = df.loc[~df['needs_expansion']].copy()
+    non_expanded['expansion_size'] = 1
+    non_expanded['large_expansion'] = False
+
+    expanded_df = pd.concat([non_expanded, unit_expanded, street_expanded], ignore_index = True)
 
     return expanded_df
 

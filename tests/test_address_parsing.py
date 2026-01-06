@@ -1,7 +1,13 @@
 import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal
-from enhance_ocod.address_parsing import process_addresses
+from enhance_ocod.address_parsing import (
+    process_addresses,
+    expand_dataframe_numbers,
+    expand_dataframe_numbers_core,
+    expand_multi_id,
+    needs_expansion
+)
 from typing import List
 import numpy as np
 
@@ -243,3 +249,290 @@ def test_address_parsing(datapoint_id):
 
     # 4. ASSERT
     assert_frame_equal(actual_df_filtered, expected_df)
+
+
+# --- Tests for Expansion Size Tracking and Large Expansion Flagging ---
+
+class TestExpansionTracking:
+    """Tests for the expansion size tracking and large expansion flagging functionality."""
+
+    def test_expand_dataframe_numbers_core_adds_metadata_columns(self):
+        """Test that expand_dataframe_numbers_core adds expansion_size and large_expansion columns."""
+        # Create a simple test dataframe with a range to expand
+        df = pd.DataFrame({
+            'unit_id': ['1-5'],
+            'number_filter': ['none'],
+            'class': ['residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=10
+        )
+
+        # Check that metadata columns exist
+        assert 'expansion_size' in result.columns
+        assert 'large_expansion' in result.columns
+
+        # Check correct values
+        assert len(result) == 5  # 1-5 expands to 5 rows
+        assert all(result['expansion_size'] == 5)
+        assert all(result['large_expansion'] == False)  # 5 < 10
+
+    def test_large_expansion_flag_triggered(self):
+        """Test that large_expansion flag is set to True when threshold is exceeded."""
+        # Create a dataframe with a large range
+        df = pd.DataFrame({
+            'unit_id': ['1-150'],
+            'number_filter': ['none'],
+            'class': ['residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=100
+        )
+
+        # Check that flag is True since 150 > 100
+        assert len(result) == 150
+        assert all(result['expansion_size'] == 150)
+        assert all(result['large_expansion'] == True)
+
+    def test_custom_threshold_parameter(self):
+        """Test that custom threshold values work correctly."""
+        df = pd.DataFrame({
+            'unit_id': ['1-50'],
+            'number_filter': ['none'],
+            'class': ['residential']
+        })
+
+        # Test with threshold of 30
+        result_30 = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=30
+        )
+        assert all(result_30['large_expansion'] == True)  # 50 > 30
+
+        # Test with threshold of 60
+        result_60 = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=60
+        )
+        assert all(result_60['large_expansion'] == False)  # 50 < 60
+
+    def test_expansion_size_for_small_range(self):
+        """Test expansion_size is correct for small ranges."""
+        df = pd.DataFrame({
+            'unit_id': ['10-12'],
+            'number_filter': ['none'],
+            'class': ['residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=100
+        )
+
+        assert len(result) == 3  # 10, 11, 12
+        assert all(result['expansion_size'] == 3)
+        assert all(result['large_expansion'] == False)
+
+    def test_erroneous_ner_example(self):
+        """Test the specific case mentioned: NER error creating 0-2009 instead of 2000-2009."""
+        # Simulate the NER error case
+        df = pd.DataFrame({
+            'unit_id': ['0-2009'],
+            'number_filter': ['none'],
+            'class': ['residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=100
+        )
+
+        # This should create 2010 rows and be flagged
+        assert len(result) == 2010
+        assert all(result['expansion_size'] == 2010)
+        assert all(result['large_expansion'] == True)
+
+    def test_legitimate_large_apartment_building(self):
+        """Test a legitimate large apartment building (e.g., 2000-2099)."""
+        df = pd.DataFrame({
+            'unit_id': ['2000-2099'],
+            'number_filter': ['none'],
+            'class': ['residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=150  # Set threshold above 100
+        )
+
+        # This creates 100 units, which may or may not be flagged depending on threshold
+        assert len(result) == 100
+        assert all(result['expansion_size'] == 100)
+        assert all(result['large_expansion'] == False)  # 100 < 150
+
+    def test_expand_dataframe_numbers_adds_metadata_to_all_rows(self):
+        """Test that expand_dataframe_numbers adds metadata columns to both expanded and non-expanded rows."""
+        # Mix of rows that need expansion and rows that don't
+        df = pd.DataFrame({
+            'unit_id': ['1-5', '10', None],
+            'street_number': [None, None, '25'],
+            'number_filter': ['none', 'none', 'none'],
+            'class': ['residential', 'residential', 'residential']
+        })
+
+        result = expand_dataframe_numbers(
+            df,
+            class_var='class',
+            large_expansion_threshold=10
+        )
+
+        # Check that all rows have metadata columns
+        assert 'expansion_size' in result.columns
+        assert 'large_expansion' in result.columns
+
+        # Non-expanded rows should have expansion_size=1 and large_expansion=False
+        non_expanded = result[result['expansion_size'] == 1]
+        assert all(non_expanded['large_expansion'] == False)
+
+    def test_expansion_with_even_filter(self):
+        """Test expansion size tracking works correctly with number filters."""
+        df = pd.DataFrame({
+            'unit_id': ['1-20'],
+            'number_filter': ['even'],
+            'class': ['residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=15
+        )
+
+        # Even numbers from 1-20: 2,4,6,8,10,12,14,16,18,20 = 10 numbers
+        assert len(result) == 10
+        assert all(result['expansion_size'] == 10)
+        assert all(result['large_expansion'] == False)  # 10 < 15
+
+    def test_expansion_with_odd_filter(self):
+        """Test expansion size tracking works correctly with odd number filter."""
+        df = pd.DataFrame({
+            'unit_id': ['1-20'],
+            'number_filter': ['odd'],
+            'class': ['residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=5
+        )
+
+        # Odd numbers from 1-20: 1,3,5,7,9,11,13,15,17,19 = 10 numbers
+        assert len(result) == 10
+        assert all(result['expansion_size'] == 10)
+        assert all(result['large_expansion'] == True)  # 10 > 5
+
+    def test_multiple_expansions_in_same_dataframe(self):
+        """Test tracking works when multiple ranges are expanded in the same dataframe."""
+        df = pd.DataFrame({
+            'unit_id': ['1-10', '50-200', '5-8'],
+            'number_filter': ['none', 'none', 'none'],
+            'class': ['residential', 'residential', 'residential']
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=50
+        )
+
+        # Check that each expansion has the correct size
+        # First expansion: 1-10 = 10 rows
+        first_expansion = result[result['unit_id'] == '1']
+        assert first_expansion['expansion_size'].iloc[0] == 10
+        assert first_expansion['large_expansion'].iloc[0] == False
+
+        # Second expansion: 50-200 = 151 rows
+        second_expansion = result[result['unit_id'] == '50']
+        assert second_expansion['expansion_size'].iloc[0] == 151
+        assert second_expansion['large_expansion'].iloc[0] == True  # 151 > 50
+
+        # Third expansion: 5-8 = 4 rows
+        third_expansion = result[result['unit_id'] == '5']
+        assert third_expansion['expansion_size'].iloc[0] == 4
+        assert third_expansion['large_expansion'].iloc[0] == False
+
+    def test_street_number_expansion_tracking(self):
+        """Test that expansion tracking works for street_number column as well."""
+        df = pd.DataFrame({
+            'unit_id': [None],
+            'street_number': ['1-100'],
+            'number_filter': ['none'],
+            'class': ['residential']
+        })
+
+        # Mark as needing expansion first
+        df = needs_expansion(df, class_var='class')
+
+        result = expand_dataframe_numbers_core(
+            df[df['needs_expansion']].reset_index(drop=True),
+            column_name='street_number',
+            large_expansion_threshold=50
+        )
+
+        assert len(result) == 100
+        assert all(result['expansion_size'] == 100)
+        assert all(result['large_expansion'] == True)  # 100 > 50
+
+    def test_default_threshold_value(self):
+        """Test that the default threshold of 100 is used when not specified."""
+        df = pd.DataFrame({
+            'unit_id': ['1-99', '1-101'],
+            'number_filter': ['none', 'none'],
+            'class': ['residential', 'residential']
+        })
+
+        # Use default threshold (should be 100)
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id'
+            # Not specifying large_expansion_threshold
+        )
+
+        # 99 should not be flagged (99 < 100)
+        result_99 = result[result['unit_id'] == '1'].head(1)
+        assert result_99['expansion_size'].iloc[0] == 99
+        assert result_99['large_expansion'].iloc[0] == False
+
+        # 101 should be flagged (101 > 100)
+        result_101 = result[result['unit_id'].astype(int) > 99].head(1)
+        assert result_101['expansion_size'].iloc[0] == 101
+        assert result_101['large_expansion'].iloc[0] == True
+
+    def test_empty_dataframe_handling(self):
+        """Test that empty dataframes are handled correctly."""
+        df = pd.DataFrame({
+            'unit_id': [],
+            'number_filter': [],
+            'class': []
+        })
+
+        result = expand_dataframe_numbers_core(
+            df,
+            column_name='unit_id',
+            large_expansion_threshold=100
+        )
+
+        # Should return empty dataframe unchanged
+        assert len(result) == 0
