@@ -702,14 +702,18 @@ def create_mean_difference_by_groups(grouping_vars,
     ocod_path = '../data/ocod_history_processed',
     price_paid_path = '../data/price_paid_msoa_averages',
     class_var = 'class2',
-    expansion_threshold=None):
+    expansion_threshold=None,
+    start_date=None,
+    end_date=None):
     """
     Calculate mean difference price trends for property groups.
 
     This function processes monthly property data to calculate weighted and
     unweighted price trends for different geographical or categorical groups.
     It compares offshore company property prices with general market prices
-    and performs statistical analysis on price ratios.
+    and performs statistical analysis on price ratios. Returns time-aggregated
+    summary statistics (one row per group) showing average monthly trends
+    across the specified date range or entire dataset.
 
     Parameters
     ----------
@@ -729,6 +733,16 @@ def create_mean_difference_by_groups(grouping_vars,
     expansion_threshold : int, optional
         Maximum expansion_size to include. Filters out rows where
         expansion_size >= threshold. If None, no filtering is applied.
+        By default None.
+    start_date : datetime, optional
+        Start date for analysis (inclusive). Only process files from this
+        date onwards. If None, includes all files from the beginning.
+        Example: pd.to_datetime('2020-01-01') or datetime(2020, 1, 1).
+        By default None.
+    end_date : datetime, optional
+        End date for analysis (inclusive). Only process files up to this
+        date. If None, includes all files up to the end.
+        Example: pd.to_datetime('2023-12-31') or datetime(2023, 12, 31).
         By default None.
     
     Returns
@@ -780,7 +794,14 @@ def create_mean_difference_by_groups(grouping_vars,
         filename_parts = ocod_file.stem.split('_')
         year = int(filename_parts[-2])
         month = int(filename_parts[-1])
-        
+
+        # Filter by date range if specified
+        file_date = datetime(year, month, 1)
+        if start_date is not None and file_date < start_date:
+            continue
+        if end_date is not None and file_date > end_date:
+            continue
+
         # Create corresponding price_paid filename
         price_paid_file = price_paid_path / f'price_paid_{year}_{month:02d}.parquet'
         
