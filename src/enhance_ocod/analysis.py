@@ -11,19 +11,71 @@ from tqdm import tqdm
 
 
 def add_file_metadata(df, filename_stem):
-    """Helper function to add filename and date columns to a dataframe"""
+    """Add filename and date columns to a dataframe.
+
+    Extracts date information from filename pattern and adds it to the dataframe.
+    Expects filename format ending with '_YYYY_MM'.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe to add metadata to
+    filename_stem : str
+        Filename stem in format '*_YYYY_MM' (e.g., 'OCOD_FULL_2022_01')
+
+    Returns
+    -------
+    pd.DataFrame
+        Copy of input dataframe with added 'filename' and 'date' columns.
+        Date is parsed as first day of the month from filename.
+    """
     df = df.copy()
     df['filename'] = filename_stem
-    
+
     # Parse date once from filename
     parts = filename_stem.split('_')
     date_str = f"{parts[-2]}-{parts[-1]}-01"
     df['date'] = pd.to_datetime(date_str)
-    
+
     return df
 
 
-def create_summarised_stats(list_of_files, class_var = 'class2'):
+def create_summarised_stats(list_of_files, class_var='class2', expansion_threshold=None):
+    """Create summary statistics from OCOD files.
+
+    Processes multiple OCOD parquet files to generate summary statistics
+    including residential property counts, regional distributions, and
+    country of incorporation data.
+
+    Parameters
+    ----------
+    list_of_files : list of pathlib.Path
+        List of file paths to OCOD parquet files to process
+    class_var : str, optional
+        Column name for property class classification, by default 'class2'
+    expansion_threshold : int, optional
+        Maximum expansion_size to include. Filters out rows where
+        expansion_size >= threshold. If None, no filtering is applied.
+        By default None.
+
+    Returns
+    -------
+    tuple of pd.DataFrame
+        Four dataframes containing:
+        - total_residential_df : Residential property counts by is_multi flag
+        - total_per_region_df : Property counts by region and class
+        - total_incorp_df : Property counts by country of incorporation
+        - total_resi_lad_df : Residential property counts by LAD and is_multi flag
+
+    Examples
+    --------
+    >>> files = list(Path('data/ocod').glob('*.parquet'))
+    >>> res_df, region_df, incorp_df, lad_df = create_summarised_stats(files)
+    >>> # Filter out runaway expansions
+    >>> res_df, region_df, incorp_df, lad_df = create_summarised_stats(
+    ...     files, expansion_threshold=1000
+    ... )
+    """
     # Initialize lists
     total_residential_df = []
     total_per_region_df = []
@@ -32,6 +84,9 @@ def create_summarised_stats(list_of_files, class_var = 'class2'):
 
     for target_file in tqdm(list_of_files):
         target_year = pd.read_parquet(target_file)
+        # Filter out runaway expansions if threshold is specified
+        if expansion_threshold is not None:
+            target_year = target_year.loc[target_year['expansion_size'] < expansion_threshold]
         filename_stem = target_file.stem
         
         # Filter residential data once
@@ -61,34 +116,39 @@ def create_summarised_stats(list_of_files, class_var = 'class2'):
 
 
 
-def create_time_series_by_groups(msoa_dwellings, grouping_vars=None, 
+def create_time_series_by_groups(msoa_dwellings, grouping_vars=None,
     class_var='class',
-    ocod_path='../data/ocod_history_processed', 
-    price_paid_path='../data/price_paid_msoa_averages'):
+    ocod_path='../data/ocod_history_processed',
+    price_paid_path='../data/price_paid_msoa_averages',
+    expansion_threshold=None):
     """Create aggregated residential property time series data by groups.
-    
+
     Processes OCOD (Overseas Companies Ownership Dataset) and price paid data
     to create time series of residential property statistics. Properties without
     MSOA codes are assigned LAD-level average prices to preserve absolute values
     while maintaining representative pricing.
-    
+
     Parameters
     ----------
     msoa_dwellings : pd.DataFrame
-        DataFrame containing MSOA dwelling counts with 'msoa11cd' and 
+        DataFrame containing MSOA dwelling counts with 'msoa11cd' and
         'dwellings' columns.
     grouping_vars : list of str, optional
         Column names to group by for aggregation (e.g., ['region', 'county']).
         If None, aggregates at MSOA level only. Default is None.
     class_var : str, optional
-        Column name used to filter for residential properties. 
+        Column name used to filter for residential properties.
         Default is 'class2'.
     ocod_path : str or Path, optional
         Path to directory containing OCOD parquet files. Files should be named
         with pattern '*_YYYY_MM.parquet'. Default is '../data/ocod_history_processed'.
     price_paid_path : str or Path, optional
-        Path to directory containing price paid parquet files. Files should be 
+        Path to directory containing price paid parquet files. Files should be
         named 'price_paid_YYYY_MM.parquet'. Default is '../data/price_paid_msoa_averages'.
+    expansion_threshold : int, optional
+        Maximum expansion_size to include. Filters out rows where
+        expansion_size >= threshold. If None, no filtering is applied.
+        By default None.
     
     Returns
     -------
@@ -160,7 +220,7 @@ def create_time_series_by_groups(msoa_dwellings, grouping_vars=None,
             continue
         
         try:
-            ocod_df, price_paid_df = _load_and_preprocess_data(ocod_file, price_paid_file, class_var)
+            ocod_df, price_paid_df = _load_and_preprocess_data(ocod_file, price_paid_file, class_var, expansion_threshold)
             
             # Skip if no residential properties
             if ocod_df.empty:
@@ -187,22 +247,87 @@ def create_time_series_by_groups(msoa_dwellings, grouping_vars=None,
     return _create_final_dataframe(results, grouping_vars)
 
 def _extract_year_month(ocod_file):
-    """Extract year and month from filename"""
+    """Extract year and month from OCOD filename.
+
+    Parses filename stem expecting pattern ending with '_YYYY_MM'.
+
+    Parameters
+    ----------
+    ocod_file : pathlib.Path
+        Path object for OCOD file with naming pattern '*_YYYY_MM.parquet'
+
+    Returns
+    -------
+    tuple of (int, int)
+        Year and month as integers (year, month)
+    """
     filename_parts = ocod_file.stem.split('_')
     return int(filename_parts[-2]), int(filename_parts[-1])
 
-def _load_and_preprocess_data(ocod_file, price_paid_file, class_var = 'class2'):
-    """Load and preprocess OCOD and price paid data"""
+def _load_and_preprocess_data(ocod_file, price_paid_file, class_var='class2', expansion_threshold=None):
+    """Load and preprocess OCOD and price paid data.
+
+    Reads OCOD and price paid parquet files, optionally filters by expansion
+    threshold, and extracts residential properties.
+
+    Parameters
+    ----------
+    ocod_file : pathlib.Path
+        Path to OCOD parquet file
+    price_paid_file : pathlib.Path
+        Path to price paid parquet file
+    class_var : str, optional
+        Column name for property class classification, by default 'class2'
+    expansion_threshold : int, optional
+        Maximum expansion_size to include. Filters out rows where
+        expansion_size >= threshold. If None, no filtering is applied.
+        By default None.
+
+    Returns
+    -------
+    tuple of (pd.DataFrame, pd.DataFrame)
+        - ocod_residential : Filtered OCOD data containing only residential properties
+        - price_paid_df : Unfiltered price paid data
+    """
     ocod_df = pd.read_parquet(ocod_file)
+    # Filter out runaway expansions if threshold is specified
+    if expansion_threshold is not None:
+        ocod_df = ocod_df.loc[ocod_df['expansion_size'] < expansion_threshold]
     price_paid_df = pd.read_parquet(price_paid_file)
-    
+
     # Filter for residential properties
     ocod_residential = ocod_df.loc[ocod_df[class_var] == 'residential'].copy()
-    
+
     return ocod_residential, price_paid_df
 
 def _aggregate_time_series_data(ocod_df, price_paid_df, msoa_dwellings, year, month, grouping_vars):
-    """Aggregate time series data with optional grouping, handling missing MSOA codes"""
+    """Aggregate time series data with optional grouping, handling missing MSOA codes.
+
+    Processes OCOD and price paid data to create aggregated statistics. Properties
+    without MSOA codes are assigned LAD-level average prices.
+
+    Parameters
+    ----------
+    ocod_df : pd.DataFrame
+        OCOD data containing residential properties
+    price_paid_df : pd.DataFrame
+        Price paid data with MSOA-level price information
+    msoa_dwellings : pd.DataFrame
+        Dwelling counts by MSOA with columns 'msoa11cd' and 'dwellings'
+    year : int
+        Year for the data
+    month : int
+        Month for the data
+    grouping_vars : list of str or None
+        Column names to group by for aggregation. If None, aggregates
+        at MSOA level only.
+
+    Returns
+    -------
+    list of dict
+        List of dictionaries containing aggregated statistics for each group,
+        including weighted prices, counts, and value calculations.
+    """
     
     # Separate properties with and without MSOA codes
     ocod_with_msoa = ocod_df[ocod_df['msoa11cd'].notna()].copy()
@@ -236,7 +361,26 @@ def _aggregate_time_series_data(ocod_df, price_paid_df, msoa_dwellings, year, mo
     return _calculate_aggregations(df, date, year, month, grouping_vars)
 
 def _calculate_lad_averages(df, grouping_vars):
-    """Calculate LAD-level price averages for assigning to unknown MSOA properties"""
+    """Calculate LAD-level price averages for assigning to unknown MSOA properties.
+
+    Computes weighted average prices at the LAD level to be used for properties
+    that lack MSOA codes.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe containing MSOA-level data with 'lad21cd', 'price_mean',
+        'price_median', and 'ocod_total_counts' columns
+    grouping_vars : list of str or None
+        Additional grouping variables beyond LAD code
+
+    Returns
+    -------
+    dict
+        Dictionary mapping group keys (tuples) to dictionaries containing
+        'price_mean' and 'price_median' weighted averages. Empty dict if
+        'lad21cd' column not present.
+    """
     if 'lad21cd' not in df.columns:
         return {}
     
@@ -270,7 +414,28 @@ def _calculate_lad_averages(df, grouping_vars):
     return lad_averages
 
 def _create_unknown_msoa_rows(ocod_without_msoa, lad_averages, grouping_vars):
-    """Create rows for properties without MSOA codes using LAD averages"""
+    """Create rows for properties without MSOA codes using LAD averages.
+
+    Generates data rows for properties lacking MSOA codes by assigning them
+    LAD-level average prices and creating synthetic MSOA identifiers.
+
+    Parameters
+    ----------
+    ocod_without_msoa : pd.DataFrame
+        OCOD data for properties without MSOA codes, must contain 'lad21cd'
+    lad_averages : dict
+        Dictionary mapping LAD group keys to price averages, as returned
+        by _calculate_lad_averages
+    grouping_vars : list of str or None
+        Additional grouping variables beyond LAD code
+
+    Returns
+    -------
+    list of dict
+        List of dictionaries representing rows for unknown MSOA properties,
+        with synthetic 'msoa11cd' values ('UNKNOWN_[LAD_CODE]'), LAD average
+        prices, and property counts.
+    """
     unknown_rows = []
     
     # Group by LAD (and other grouping vars)
@@ -307,9 +472,43 @@ def _create_unknown_msoa_rows(ocod_without_msoa, lad_averages, grouping_vars):
     return unknown_rows
 
 def _calculate_aggregations(df, date, year, month, grouping_vars):
-    """Calculate aggregation metrics"""
+    """Calculate aggregation metrics for time series data.
+
+    Computes weighted price statistics, property counts, and value calculations
+    for OCOD data, optionally grouped by specified variables.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Merged dataframe with price and property count data
+    date : datetime.datetime
+        Date for the data point (first day of month)
+    year : int
+        Year of the data
+    month : int
+        Month of the data
+    grouping_vars : list of str or None
+        Column names to group by. If None, treats entire dataframe as one group.
+
+    Returns
+    -------
+    list of dict
+        List of dictionaries containing aggregated metrics including weighted
+        prices, counts, total values, and ratios for each group.
+    """
     def calculate_metrics(group_df):
-        """Calculate metrics for a group"""
+        """Calculate metrics for a group.
+
+        Parameters
+        ----------
+        group_df : pd.DataFrame
+            Subset of data for a specific group
+
+        Returns
+        -------
+        dict
+            Dictionary of calculated metrics for the group
+        """
         # Fill NaN values with 0 for counts
         group_df['ocod_total_counts'] = group_df['ocod_total_counts'].fillna(0)
         group_df['dwellings'] = group_df['dwellings'].fillna(0)
@@ -390,33 +589,72 @@ def _calculate_aggregations(df, date, year, month, grouping_vars):
     ]
 
 def _create_final_dataframe(results, grouping_vars):
-    """Create and sort final DataFrame"""
+    """Create and sort final DataFrame from aggregation results.
+
+    Parameters
+    ----------
+    results : list of dict
+        List of dictionaries containing aggregation results
+    grouping_vars : list of str or None
+        Column names used for grouping, affects sort order
+
+    Returns
+    -------
+    pd.DataFrame
+        Sorted dataframe with all results. Returns empty dataframe if
+        results list is empty. Sorted by date and grouping variables.
+    """
     if not results:
         return pd.DataFrame()
-    
+
     time_series_df = pd.DataFrame(results)
-    
+
     # Sort columns
     sort_cols = ['date']
     if grouping_vars:
         sort_cols.extend(grouping_vars)
-    
+
     return time_series_df.sort_values(sort_cols).reset_index(drop=True)
 
 import numpy as np
 from scipy import stats
 
 def bootstrap_ratio_test(ratios, n_bootstrap=1000, random_state=42):
-    """
-    Vectorized bootstrap test for whether mean ratio is significantly different from 1
-    
-    Args:
-        ratios (array-like): Array of price ratios
-        n_bootstrap (int): Number of bootstrap samples
-        random_state (int): Random seed for reproducibility
-    
-    Returns:
-        dict: Contains fractions above/below 1, mean_ratio, confidence intervals, and significance
+    """Vectorized bootstrap test for whether mean ratio is significantly different from 1.
+
+    Performs bootstrap resampling to test if the mean of price ratios differs
+    significantly from 1.0 using a two-tailed test at the 0.05 significance level.
+
+    Parameters
+    ----------
+    ratios : array-like
+        Array of price ratios to test
+    n_bootstrap : int, optional
+        Number of bootstrap samples to generate, by default 1000
+    random_state : int, optional
+        Random seed for reproducibility, by default 42
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - fraction_above_one : float
+            Fraction of bootstrap means above 1.0
+        - fraction_below_one : float
+            Fraction of bootstrap means below 1.0
+        - significantly_different : bool
+            Whether ratio is significantly different from 1.0 (p < 0.05)
+        - mean_ratio : float
+            Mean of input ratios
+        - ci_lower : float
+            Lower bound of 95% confidence interval
+        - ci_upper : float
+            Upper bound of 95% confidence interval
+
+    Notes
+    -----
+    Returns NaN values and False for significantly_different if fewer than
+    2 ratios are provided.
     """
     ratios = np.array(ratios)
     n = len(ratios)
@@ -460,33 +698,38 @@ def bootstrap_ratio_test(ratios, n_bootstrap=1000, random_state=42):
         'ci_upper': ci_upper
     }
 
-def create_mean_difference_by_groups(grouping_vars, 
-    ocod_path = '../data/ocod_history_processed', 
+def create_mean_difference_by_groups(grouping_vars,
+    ocod_path = '../data/ocod_history_processed',
     price_paid_path = '../data/price_paid_msoa_averages',
-    class_var = 'class2'):
+    class_var = 'class2',
+    expansion_threshold=None):
     """
     Calculate mean difference price trends for property groups.
-    
-    This function processes monthly property data to calculate weighted and 
+
+    This function processes monthly property data to calculate weighted and
     unweighted price trends for different geographical or categorical groups.
     It compares offshore company property prices with general market prices
     and performs statistical analysis on price ratios.
-    
+
     Parameters
     ----------
     grouping_vars : list of str
-        Column names to group analysis by (e.g., ['localauthority'], 
+        Column names to group analysis by (e.g., ['localauthority'],
         ['region', 'property_type']). Cannot be None as grouping variables
         are required for the analysis.
     ocod_path : str, optional
         Path to directory containing OCOD (Overseas Companies Ownership Data)
         processed parquet files, by default '../data/ocod_history_processed'
-    price_paid_path : str, optional  
+    price_paid_path : str, optional
         Path to directory containing price paid MSOA average parquet files,
         by default '../data/price_paid_msoa_averages'
     class_var : str, optional
         Column name used to filter for residential properties,
         by default 'class2'
+    expansion_threshold : int, optional
+        Maximum expansion_size to include. Filters out rows where
+        expansion_size >= threshold. If None, no filtering is applied.
+        By default None.
     
     Returns
     -------
@@ -548,8 +791,11 @@ def create_mean_difference_by_groups(grouping_vars,
         try:
             # Read the data
             ocod_df = pd.read_parquet(ocod_file)
+            # Filter out runaway expansions if threshold is specified
+            if expansion_threshold is not None:
+                ocod_df = ocod_df.loc[ocod_df['expansion_size'] < expansion_threshold]
             price_paid_df = pd.read_parquet(price_paid_file)
-            
+
             # Filter for residential properties
             ocod_residential = ocod_df.loc[ocod_df[class_var]=='residential'].copy()
             
