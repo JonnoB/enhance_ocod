@@ -195,7 +195,17 @@ Contributions and suggestions are welcome! Please open issues or pull requests.
 
 ## Citation
 If you use this repository, please cite:
-- J Bourne et al (2023). "What's in the laundromat? Mapping and characterising offshore owned residential property in London"	 [https://doi.org/10.1177/2399808323115548](https://doi.org/10.1177/2399808323115548)
+Bourne, J., Ingianni, A., & McKenzie, R. (2023). What's in the laundromat? Mapping and characterising offshore-owned residential property in London. *Environment and Planning B*, 50(9), 2430–2451. https://doi.org/10.1177/23998083231155483
+
+```bibtext
+@article{bourne2023laundromat,
+  author  = {Bourne, Jonathan and Ingianni, Andrea and McKenzie, Rex},
+  title   = {What's in the laundromat? {Mapping} and characterising offshore-owned residential property in {London}},
+  journal = {Environment and Planning B: Urban Analytics and City Science},
+  year    = {2023},
+  doi     = {10.1177/23998083231155483},
+}
+```
 
 
 ## License
