@@ -73,10 +73,10 @@ from enhance_ocod.price_paid_process import (
 )
 from pathlib import Path
 
-# Configuration
-OCOD_FOLDER_PATH = Path("data/ocod_history_processed")
-PRICE_PAID_FOLDER = Path("data/processed_price_paid")
-OUTPUT_FOLDER = Path("data/price_paid_msoa_averages")
+SCRIPT_DIR = Path(__file__).parent
+OCOD_FOLDER_PATH = SCRIPT_DIR.parent / "data" / "ocod_history_processed"
+PRICE_PAID_FOLDER = SCRIPT_DIR.parent / "data" / "processed_price_paid"
+OUTPUT_FOLDER = SCRIPT_DIR.parent / "data" / "price_paid_msoa_averages"
 
 
 def main():
