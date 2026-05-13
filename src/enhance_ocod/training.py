@@ -118,41 +118,49 @@ class NERDataProcessor:
 
         Returns:
             List[int]: List of label IDs aligned to each token. Non-entity tokens are set to 'O'.
+            Special tokens ([CLS], [SEP], [PAD]) and subword continuation tokens get -100
+            so the loss is not computed on them.
         """
-        # Initialize all labels as 'O' (outside)
         labels = [-100] * len(tokenized_inputs["input_ids"])
-
-        # Get word IDs to handle subword tokens
         word_ids = tokenized_inputs.word_ids()
 
-        # Create character to span mapping
+        # Build char → span lookup for fast overlap checks
         char_to_span = {}
         for span in spans:
             for char_idx in range(span["start"], span["end"]):
                 char_to_span[char_idx] = span
 
-        # Map tokens to labels
-        current_entity_span = None  # Track the actual entity span, not just any span
+        prev_word_id = None
+        current_entity_span = None
 
-        for token_idx, word_idx in enumerate(word_ids):
-            if word_idx is None:  # Special tokens ([CLS], [SEP], [PAD])
+        for token_idx, word_id in enumerate(word_ids):
+            if word_id is None:
+                # Special token ([CLS], [SEP], [PAD]) — skip, leave as -100
+                prev_word_id = word_id
+                continue
+
+            if word_id == prev_word_id:
+                # Subword continuation token (e.g. "##elagh") — mask with -100
+                # so loss is not computed and the token is skipped at decode time
                 labels[token_idx] = -100
                 continue
 
-            # Get character span for this token
+            prev_word_id = word_id
+
+            # First subword of a new word — determine its label from char position
             try:
                 char_span = tokenized_inputs.token_to_chars(token_idx)
                 if char_span is None:
                     labels[token_idx] = self.label2id["O"]
+                    current_entity_span = None
                     continue
-
                 token_start = char_span.start
                 token_end = char_span.end
             except Exception:
                 labels[token_idx] = self.label2id["O"]
+                current_entity_span = None
                 continue
 
-            # Check if this token overlaps with any entity span
             entity_span = None
             for char_idx in range(token_start, token_end):
                 if char_idx in char_to_span:
@@ -160,27 +168,16 @@ class NERDataProcessor:
                     break
 
             if entity_span is None:
-                # Token is outside any entity
                 labels[token_idx] = self.label2id["O"]
                 current_entity_span = None
             else:
-                # Token is inside an entity
                 entity_label = entity_span["label"]
-
-                # FIXED LOGIC: Only use B- tag at the very start of an entity span
-                # OR when switching between different entity spans
-                if (
-                    current_entity_span is None
-                    or current_entity_span != entity_span
-                    or token_start == entity_span["start"]
-                ):
-                    # This is the beginning of a new entity
+                if current_entity_span is None or current_entity_span != entity_span:
                     labels[token_idx] = self.label2id.get(
                         f"B-{entity_label}", self.label2id["O"]
                     )
                     current_entity_span = entity_span
                 else:
-                    # This is a continuation of the current entity
                     labels[token_idx] = self.label2id.get(
                         f"I-{entity_label}", self.label2id["O"]
                     )
