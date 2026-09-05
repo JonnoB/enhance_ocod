@@ -24,6 +24,10 @@ dependencies = [
     "scikit-learn",  # for sklearn.metrics
     "torch",
     "tqdm",
+    "requests",
+    "python-dotenv",
+    "scipy",
+    "pyarrow",
 ]
 
 classifiers = [

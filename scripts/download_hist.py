@@ -1,30 +1,31 @@
 """
 download_hist.py
 
-This script automates the process of downloading the full OCOD history files from the UK Land Registry API.
-It performs the following steps:
+Downloads all the bulk datasets the project depends on, using the
+enhance_ocod.get_data module. Each dataset is skipped if its target directory
+already contains files, so the script is safe to re-run.
 
-1. Authenticates with the Land Registry API using an API key loaded from environment variables.
-2. Retrieves metadata for all available OCOD history datasets.
-3. Filters for "FULL" OCOD files and sorts them chronologically.
-4. Skips files that have already been downloaded to the local output directory.
-5. Prompts the user for confirmation before downloading any missing files.
-6. For each file to be downloaded:
-   - Requests a fresh, pre-signed S3 download URL from the API.
-   - Downloads the file using the pre-signed URL (no Authorization header).
-   - Saves the file to the output directory.
+Datasets downloaded (in order):
 
+1. Land Registry Price Paid Data (complete CSV, ~4.3 GB as of July 2025)
+   -> data/price_paid_data/price_paid_complete.csv
+2. ONS Postcode Directory (ONSPD), latest release from ArcGIS
+   -> data/onspd/
+3. VOA rating list, latest "baseline" listentries file from Azure blob storage
+   -> data/voa/
+4. OCOD history files ("FULL" only) from the Land Registry API
+   -> data/ocod_history/
+
+All downloads run non-interactively (confirm=False); nothing prompts for
+confirmation.
 
 Environment variable required:
-    LANDREGISTRY_API: The API key for authenticating with the Land Registry API.
+    LANDREGISTRY_API: API key for the Land Registry API, used for the OCOD
+    history download. The Price Paid, ONSPD and VOA sources need no
+    authentication.
 
 Typical usage:
     python download_hist.py
-"""
-"""
-download_hist.py
-
-This script uses the get_data module to download OCOD history files.
 """
 
 
@@ -35,11 +36,13 @@ from enhance_ocod.get_data import download_ocod_history, download_csv, download_
 # Get the directory where this script is located
 SCRIPT_DIR = Path(__file__).parent.absolute()
 
-# Create output directory paths
-OUTPUT_DIR = SCRIPT_DIR / ".." / "data" / "ocod_history"
-PRICE_PAID_DIR = Path('../data/price_paid_data')
-VOA_DIR = Path("../data/voa")
-ONSPD_DIR = Path("../data/onspd/")
+# Create output directory paths, all anchored to the repo root so the script
+# can be run from any working directory
+DATA_DIR = (SCRIPT_DIR / ".." / "data").resolve()
+OUTPUT_DIR = DATA_DIR / "ocod_history"
+PRICE_PAID_DIR = DATA_DIR / "price_paid_data"
+VOA_DIR = DATA_DIR / "voa"
+ONSPD_DIR = DATA_DIR / "onspd"
 
 def check_directory_has_files(directory_path):
     """

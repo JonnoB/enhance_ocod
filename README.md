@@ -77,17 +77,28 @@ If you want to contribute or modify the code:
 - Python automatically handles this naming conversion
 
 ## Data Requirements
-To recreate or update the enhanced OCOD dataset, several open datasets are required. 
-The `get_data` module has the functionality to download the required files, and the `download_hist.py` script can be used to perform downloading automatically. If done manually the files must be downloaded and placed in subd-directories of the `data/` directory. The sub-directories should be named as follows:
+To recreate or update the enhanced OCOD dataset, four open datasets are required. The easiest way to get them is:
 
-| Dataset                                                                                             | Folder          | Type   | API Available |
-|-----------------------------------------------------------------------------------------------------|----------------------|--------|--------------|
-| [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod)                         | ocod_history        | csv    | Yes          |
-| [ONSPD](https://open-geography-portalx-ons.hub.arcgis.com/datasets/ons::ons-postcode-directory-february-2025-for-the-uk/about) | onspd           | zip    | Yes          |
-| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads) | price_paid_data     | folder | No           |
-| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm)                   | voa     | csv    | Yes          |
+```bash
+python scripts/download_hist.py
+```
 
-**Note:**
+This downloads all four into sub-directories of `data/`, skipping any dataset whose folder already contains files, so it is safe to re-run. It runs without prompting. Only the OCOD download needs credentials: a `LANDREGISTRY_API` key in your `.env` file (or environment). The other three sources are public and need no authentication.
+
+The individual downloaders in the `get_data` module (`download_ocod_history`, `download_latest_onspd`, `download_csv`, `VOARatingListDownloader`) can also be called directly if you want more control.
+
+If you download manually, place the files in these sub-directories of `data/`:
+
+| Dataset | Folder | File(s) expected | Downloaded via |
+|---|---|---|---|
+| [OCOD dataset](https://use-land-property-data.service.gov.uk/datasets/ocod) | `ocod_history` | `OCOD_FULL_*.zip`, one per release — the whole history | Land Registry API (needs API key) |
+| [ONSPD](https://open-geography-portalx-ons.hub.arcgis.com/datasets/ons::ons-postcode-directory-february-2025-for-the-uk/about) | `onspd` | a single ONSPD `.zip` (latest release) | ArcGIS API |
+| [Price Paid dataset](https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads) | `price_paid_data` | a single `price_paid_complete.csv` (~4.3 GB) | Direct download |
+| [VOA ratings list](https://voaratinglists.blob.core.windows.net/html/rlidata.htm) | `voa` | a single baseline "listentries" `.zip` | Azure blob storage listing |
+
+**Notes:**
+- `ocod_history` is the only folder that should hold more than one file; the pipeline processes every `OCOD_FULL_*.zip` it finds there. For `onspd`, `price_paid_data` and `voa`, `parse_ocod_history.py` just picks the first file in the folder, so keep exactly one file in each or you may get an unintended version.
+- `parse_ocod_history.py` creates further sub-directories of `data/` for its own intermediate and output files (`processed_price_paid`, `parsed_ocod_dicts`, `gazetteer`, `ocod_history_processed`). You do not need to create these yourself.
 - The OCOD dataset is a convoluted experience to get hold of you need to create an account and also use a bank card to confim identity, the bank card will be charged £0.0. Whether this much security is necessary is debatable, and in fact can be debated by contacting your [MP to complain](https://members.parliament.uk/FindYourMP).
 
 
@@ -160,7 +171,7 @@ If no arguments are provided, the script uses the default paths and downloads th
 
 To reproduce the Paper run the files in the following order
 
-- `scripts/download_hist.py`: Downloads the entire OCOD dataset history and saves by year as zip files. Requires a 'LANDREGISTRY_API' in the .env file.
+- `scripts/download_hist.py`: Downloads all four required datasets (OCOD history as zip files, ONSPD, Price Paid, VOA rating list) into `data/`. Requires a 'LANDREGISTRY_API' in the .env file for the OCOD download.
 - `scripts/create_weak_labelling_data.py`: Using the regex rules weakly label the OCOD February 2022 data set
 - `scripts/ready_csv_for_training.py`: Create the datasets for training and evaluation of the models out of the development set, weakly labelled set and test set.
 - `scripts/run_experiments.py`: Using the dev and weakly labelled sets, train the ModernBERT models. The script also calls the `mbert_train_configurable.py` script.
